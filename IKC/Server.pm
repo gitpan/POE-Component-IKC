@@ -27,7 +27,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_server);
-$VERSION = '0.2100';
+$VERSION = '0.2101';
 
 sub DEBUG { 0 }
 sub DEBUG_USR2 { 1 }

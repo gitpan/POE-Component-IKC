@@ -26,7 +26,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2100';
+$VERSION = '0.2101';
 
 sub DEBUG { 0 }
 

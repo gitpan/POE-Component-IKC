@@ -15,7 +15,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(freeze thaw dclone);
-$VERSION = '0.2100';
+$VERSION = '0.2101';
 
 sub DEBUG { 0 }
 
