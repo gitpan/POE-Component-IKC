@@ -1,13 +1,13 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 358 2009-04-03 07:25:38Z fil $
+# $Id: Channel.pm 468 2009-05-01 17:01:00Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2008 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2009 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -27,7 +27,7 @@ use Data::Dumper;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = '0.2001';
+$VERSION = '0.2100';
 
 sub DEBUG { 0 }
 
@@ -176,6 +176,7 @@ sub channel_start
 
     _set_phase($kernel, $heap, '000');
     $kernel->call( 'IKC', 'register_channel' );
+    return 'channel';
 }
 
 #----------------------------------------------------
@@ -589,6 +590,7 @@ sub channel_stop
     DEBUG && 
         warn "$$: *** Channel will shut down.\n";
     _close_channel($heap);
+    return "channel";
 }
 
 ###########################################################################
@@ -777,7 +779,7 @@ serialization.  A serializer package requires 2 functions : freeze (or
 nfreeze) and thaw.  See C<POE::Component::IKC::Client>.
 
 
-
+=back
 
 =head1 EVENTS
 
