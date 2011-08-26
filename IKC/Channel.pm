@@ -1,13 +1,13 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 780 2011-08-16 18:43:40Z fil $
+# $Id: Channel.pm 803 2011-08-26 15:17:52Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2009 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -31,7 +31,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = '0.2300';
+$VERSION = '0.2301';
 
 sub DEBUG () { 0 }
 
@@ -1057,7 +1057,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2009 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               POE-Component-IKC
-version:            0.2300
+version:            0.2301
 abstract:           Inter-Kernel Communication for POE
 author:
     - Philip Gwyn
