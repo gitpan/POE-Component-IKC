@@ -8,6 +8,7 @@ use strict;
 use POE::Kernel;
 
 eval {
+    POE::Component::IKC::Responder->spawn();
     Test::Client->spawn(@ARGV);
     $poe_kernel->run();
 };
@@ -47,23 +48,29 @@ sub _start
     my($kernel, $heap, $type, $port)=@_[KERNEL, HEAP, ARG0, ARG1];
 
     $kernel->alias_set('Client');
-    POE::Component::IKC::Responder->spawn();
+    my %args;
+
+    DEBUG and warn "$$: type=$type";
+    if( $type =~ m/0$/ ) {
+        $args{protocol} = 'IKC0';
+    }
 
     my $rname=$heap->{name}=ucfirst $type;
     $rname =~ s/\d+$//;
     $heap->{rname} = $rname;
 
-    my %args=(name=>"$heap->{name}Client");
 
-    if($type eq 'ikc') {
+    if($type =~ /^ikc/) {
         $args{serializer}='POE::Component::IKC::Freezer';
 #        $kernel->post(IKC=>'monitor', 'Inet'=>{register=>'registered'});
 #    } else {
     }
+    DEBUG and warn "$$: Looking for $rname";
     $kernel->post(IKC=>'monitor', $rname=>{register=>'registered'});
 
+    $args{name} = "$heap->{name}Client";
 
-    if($type eq 'unix') {
+    if($type =~ /^unix/) {
         $args{unix}=($ENV{TMPDIR}||$ENV{TEMP}||'/tmp').'/IKC-test.pl';
     } 
     else {                    # ikc AND inet
@@ -90,7 +97,8 @@ sub posting
 {
     DEBUG and warn "Client: posting\n";
     my($kernel, $heap)=@_[KERNEL, HEAP];
-    $kernel->post(IKC=>'post', "poe://$heap->{rname}/test/posted"=>'posted');
+    $kernel->post(IKC=>'post', "poe://$heap->{rname}/test/posted"=>
+                    ['posted', $heap->{name}]);
 
     sleep(0);
     $kernel->yield('calling');

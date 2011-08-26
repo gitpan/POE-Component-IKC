@@ -1,9 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
 
-use Test::More tests => 26;
+use Test::More tests => 44;
 
 sub POE::Kernel::ASSERT_EVENTS { 1 }
 
@@ -12,9 +10,8 @@ use POE::Component::IKC::Channel;
 use POE::Component::IKC::Client;
 use POE qw(Kernel);
 
-pass( "loaded" );
+pass( "loaded $$" );
 
-######################### End of black magic.
 sub DEBUG () { 0 }
 
 my $Q=2;
@@ -23,10 +20,14 @@ my $WIN32=1 if $^O eq 'MSWin32';
 
 
 DEBUG and print "Starting servers...\n";
+
+# Note : IKC0 for Unix test and IKC for Inet test means we can test
+# the fallback mechanism.
 unless($WIN32) {
     POE::Component::IKC::Server->spawn(
         unix=>($ENV{TMPDIR}||$ENV{TEMP}||'/tmp').'/IKC-test.pl',
         name=>'Unix',
+        protocol=>'IKC0'
     );
 }
 
@@ -34,6 +35,7 @@ my $port = POE::Component::IKC::Server->spawn(
         port=>0,
         name=>'Inet',
         aliases=>[qw(Ikc)],
+        protocol=>'IKC'
     );
 
 ok( $port, "Got the port number" ) or die;
@@ -96,8 +98,16 @@ sub _start
             register=>'unix_register',
             unregister=>'unix_unregister'
         });
+        $kernel->post(IKC=>'monitor', 'Unix0Client'=>{
+            register=>'unix_register',
+            unregister=>'unix_unregister'
+        });
     }
     $kernel->post(IKC=>'monitor', 'InetClient'=>{
+            register=>'inet_register',
+            unregister=>'inet_unregister'
+        });
+    $kernel->post(IKC=>'monitor', 'Inet0Client'=>{
             register=>'inet_register',
             unregister=>'inet_unregister'
         });
@@ -105,22 +115,42 @@ sub _start
             register=>'ikc_register',
             unregister=>'ikc_unregister'
         });
+    $kernel->post(IKC=>'monitor', 'Ikc0Client'=>{
+            register=>'ikc_register',
+            unregister=>'ikc_unregister'
+        });
     $kernel->post(IKC=>'monitor', '*'=>{shutdown=>'shutdown'});
 
+    my @todo;
+
     unless($WIN32) {
-        $kernel->yield(do_child=>'unix');
-    } else {
+        push @todo, qw( unix unix0 );
+    } 
+    else {
         SKIP: {
-            ::skip( "win32 doesn't have UNIX domain sockets", 6 );
+            ::skip( "win32 doesn't have UNIX domain sockets", 12 );
         }
-        $kernel->yield(do_child=>'inet');
     }
+    push @todo, qw( inet inet0 ), qw( ikc ikc0 );
+    $heap->{todo} = \@todo;
+    $kernel->yield('do_child');
+
 }
 
 ###########################################################
 sub do_child
 {
-    my($kernel, $heap, $type)=@_[KERNEL, HEAP, ARG0];
+    my($kernel, $heap)=@_[KERNEL, HEAP];
+
+    my $type = shift @{ $heap->{todo} };
+    unless( $type ) {
+        DEBUG and warn "Nothing more todo";
+
+        $kernel->delay('timeout');
+        $kernel->post(IKC=>'shutdown');
+        return;
+    }
+
     my $pid=fork();
     die "Can't fork: $!\n" unless defined $pid;
     if($pid) {          # parent
@@ -128,6 +158,7 @@ sub do_child
         $kernel->delay(timeout=>60);
         return;
     }
+    $kernel->has_forked if $kernel->can( 'has_forked' );
     my $exec="$Config{perlpath} -I./blib/arch -I./blib/lib -I$Config{archlib} -I$Config{privlib} test-client $type $heap->{port}";
     DEBUG and warn "Running $exec";
     exec $exec;
@@ -151,10 +182,11 @@ sub _stop
 ###########################################################
 sub posted
 {
-    my($kernel, $heap, $type)=@_[KERNEL, HEAP, ARG0];
+    my($kernel, $heap)=@_[KERNEL, HEAP];
+    my($type, $remote)=@{ $_[ARG0] };
     DEBUG and warn "Server: posted $heap->{q}\n";
     # 6, 12, 18
-    ::is($type, 'posted', 'posted');
+    ::is($type, 'posted', "posted $remote");
 }
 
 ###########################################################
@@ -201,7 +233,18 @@ sub unix_register
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Server: unix_register\n";
-    ::is($name, 'UnixClient', 'UnixClient');
+    _is_client( 'Unix', $name, 'Register' );
+}
+
+sub _is_client
+{
+    my( $type, $name, $action ) = @_;
+
+
+    my $want = $type;
+    $want .= '0' if $name =~ /0/;
+    $want .= 'Client';
+    ::is($name, $want, "$action $want" );
 }
 
 ###########################################################
@@ -210,8 +253,8 @@ sub unix_unregister
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Server: unix_unregister\n";
-    ::is($name, 'UnixClient', 'UnixClient');
-    $kernel->yield(do_child=>'inet');
+    _is_client( 'Unix', $name, 'Unregister' );
+    $kernel->yield('do_child' );
 }
 
 ###########################################################
@@ -220,7 +263,7 @@ sub inet_register
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Server: inet_register\n";
-    ::is($name, 'InetClient', 'InetClient');
+    _is_client( 'Inet', $name, 'Register' );
 }
 
 ###########################################################
@@ -229,9 +272,9 @@ sub inet_unregister
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Server: inet_unregister ($name)\n";
-    ::is($name, 'InetClient', 'InetClient');
+    _is_client( 'Inet', $name, 'Unregister' );
     $kernel->delay('timeout');
-    $kernel->yield(do_child=>"ikc");
+    $kernel->yield('do_child');
 }
 
 
@@ -241,7 +284,7 @@ sub ikc_register
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Server: ikc_register\n";
-    ::is( $name, 'IkcClient' , 'IkcClient' );
+    _is_client( 'Ikc', $name, 'Register' );
 }
 
 ###########################################################
@@ -249,10 +292,10 @@ sub ikc_unregister
 {
     my($kernel, $heap, $name, $alias, $is_alias, 
                             )=@_[KERNEL, HEAP, ARG0, ARG1, ARG2];
-    DEBUG and warn "Server: ikc_unregister ($name)\n";
-    ::is($name, 'IkcClient', 'IkcClient');
-    $kernel->delay('timeout');
-    $kernel->post(IKC=>'shutdown');
+    DEBUG and 
+        warn "Server: ikc_unregister ($name)\n";
+    _is_client( 'Ikc', $name, "Unregister" );
+    $kernel->yield('do_child');
 }
 
 
@@ -273,4 +316,3 @@ sub timeout
     warn "Server: Timedout waiting for child process.\n";
     $kernel->post(IKC=>'shutdown');
 }
-

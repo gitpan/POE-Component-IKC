@@ -32,6 +32,7 @@ ok(($f and $t), "Loaded a freezer");
 POE::Component::IKC::Responder->spawn;
 
 my $port = POE::Component::IKC::Server->spawn(
+        protocol=>'IKC0',
         port=>0,
         name=>'Inet',
         aliases=>[qw(Ikc)],
@@ -103,6 +104,7 @@ sub do_child
         return;
     }
     my $exec="$Config{perlpath} -I./blib/arch -I./blib/lib -I$Config{archlib} -I$Config{privlib} test-$type $port";
+    # warn $exec;
     exec $exec;
     die "Couldn't exec $exec: $!\n";
 }

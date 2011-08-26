@@ -1,5 +1,12 @@
 Revision history for Perl extension POE::Component::IKC.
 
+0.2300 26 Aug 2011
+    - Fixed thunk checking for 1.311
+    - Added IKC::Timing, temporarily
+    - Created a new, faster protocol (IKC0) which sends all info on one line
+      as opposed to multiple lines as before (IKC)
+    - Channel session will detach itself from Client session
+
 0.2200 08 May 2009
     - Better concurrency handling
     - We now have a reusable thunk session

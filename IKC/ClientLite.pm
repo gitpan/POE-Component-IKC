@@ -1,7 +1,7 @@
 package POE::Component::IKC::ClientLite;
 
 ############################################################
-# $Id: ClientLite.pm 495 2009-05-08 19:46:42Z fil $
+# $Id: ClientLite.pm 795 2011-08-26 14:40:39Z fil $
 # By Philp Gwyn <fil@pied.nu>
 #
 # Copyright 1999-2009 Philip Gwyn.  All rights reserved.
@@ -18,6 +18,7 @@ use Socket;
 use IO::Socket;
 use IO::Select;
 use POE::Component::IKC::Specifier;
+use POE::Component::IKC::Protocol;
 use Data::Dumper;
 use POSIX qw(:errno_h);
 use Carp;
@@ -25,7 +26,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_client);
-$VERSION = '0.2200';
+$VERSION = '0.2300';
 
 sub DEBUG { 0 }
 
@@ -49,10 +50,11 @@ sub create_ikc_client
     $parms{timeout}||=30;
     $parms{serialiser}||=_default_freezer();
     $parms{block_size} ||= 65535;
+    $parms{protocol} ||= 'IKC0';
 
     my %self;
-    @self{qw(ip port name serialiser timeout connect_timeout block_size)}=
-            @parms{qw(ip port name serialiser timeout connect_timeout block_size)};
+    @self{qw(ip port name serialiser timeout connect_timeout block_size protocol)}=
+            @parms{qw(ip port name serialiser timeout connect_timeout block_size protocol)};
 
     eval {
         @{$self{remote}}{qw(freeze thaw)}=_get_freezer($self{serialiser});
@@ -86,7 +88,7 @@ sub connect
 
     my $name=$remote->{name};
     DEBUG && print "Connecting to $name...\n";
-    my $sock;
+    my( $sock, $resp );
 
     my $DONE = 0;
     eval {
@@ -102,6 +104,16 @@ sub connect
         $sock->autoflush(1);
         local $/="\cM\cJ";
         local $\="\cM\cJ";
+
+        # Attempt IKC0 protocol
+        if( $self->{protocol} eq 'IKC0' ) {
+            if( $self->_protocol_IKC0( $sock ) ) {
+                $DONE = 1;
+                return;
+            }
+        }
+
+        # Fallback to IKC protocol
         $sock->print('HELLO');
         my $resp;
 
@@ -136,11 +148,11 @@ sub connect
         alarm( $self->{connect_timeout} );
         $sock->print('WORLD');                      # phase 003
         chomp($resp=$sock->getline);
-        alarm( 0 );
         die "Phase 003: $!\n" unless defined $resp;
         die "Didn't get UP from $name\n" unless $resp eq 'UP';        
         $DONE = 1;
     };
+    alarm( 0 );
     if($@)
     {
         $self->{error}=$error=$@;
@@ -153,6 +165,41 @@ sub connect
     $remote->{connected}=1;
     return 1;
 }
+
+#----------------------------------------------------
+sub _protocol_IKC0
+{
+    my( $self, $sock ) = @_;
+
+    my $remote=$self->{remote};
+    my $name=$remote->{name};
+    my $resp;
+
+    my $setup = POE::Component::IKC::Protocol::__build_setup(
+                            [ $self->{name} ], [ $self->{serialiser} ] );
+    $sock->print( $setup ); 
+    alarm( $self->{connect_timeout} );
+    while (defined($resp=$sock->getline))       # phase 010
+    {
+        chomp($resp);
+        return if $resp eq 'NOT';                 # move to phase 000
+        die "Phase 010: Invalid response from $name: $resp\n" unless $resp =~ /^SETUP (.+)$/;
+        my( $K, $freezer, $bad) = 
+                            POE::Component::IKC::Protocol::__neg_setup( $1 );
+        if( $bad ) {
+            $sock->print( 'NOT' );
+            next;
+        }
+        die "Phase 010: Refused $self->{serialiser}, wants $freezer" 
+                            unless $freezer->[0] eq $self->{serialiser};
+        $remote->{name} = $K->[0];
+        foreach my $a ( @$K ) {
+            $remote->{aliases}{$a} = 1;
+        }
+        return 1;
+    }
+}
+
 
 #----------------------------------------------------
 sub error
@@ -610,6 +657,15 @@ Time, in seconds, to wait for a phase of the connection negotiation to
 complete.  Defaults to C<timeout>.  There are 4 phases of negotiation, so a
 the default C<connect_timeout> of 30 seconds means it could potentialy take
 2 minutes to connect.
+
+=item protocol
+
+Which IKC negociation protocol to use.  The original protocol (C<IKC>) was
+synchronous and slow.  The new protocol (C<IKC0>) sends all information at
+once.  IKC0 will degrade gracefully to IKC, if the client and server don't
+match.
+
+Default is IKC0.
 
 =back
 

@@ -1,7 +1,7 @@
 package POE::Component::IKC::Server;
 
 ############################################################
-# $Id: Server.pm 494 2009-05-08 18:36:12Z fil $
+# $Id: Server.pm 794 2011-08-26 14:35:27Z fil $
 # Based on refserver.perl and preforkedserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_server);
-$VERSION = '0.2200';
+$VERSION = '0.2300';
 
 sub DEBUG { 0 }
 sub DEBUG_USR2 { 1 }
@@ -55,6 +55,7 @@ sub spawn
         $params{port} = 603                 # POE! (almost :)
                     unless defined $params{port};
     }
+    $params{protocol} ||= 'IKC0';
 
     # Make sure one is available
     POE::Component::IKC::Responder->spawn();
@@ -196,7 +197,7 @@ sub _start
     $heap->{name}=$params->{name};
     $heap->{kernel_aliases}=$params->{aliases};
     $heap->{concurrency}=$params->{concurrency} || 0;
-
+    $heap->{protocol}=$params->{protocol};
                                         # create a socket factory
     $heap->{wheel} = new POE::Wheel::SocketFactory (%wheel_p);
     if( $heap->{wheel} and not $params->{unix} and not $params->{port} ) {
@@ -224,6 +225,15 @@ sub _start
     }
 
     $kernel->post(IKC=>'register_local', \@names);
+
+    # pre-load the default serialisers
+    foreach my $ft ( qw(Storable FreezeThaw POE::Component::IKC::Freezer) ) {
+        eval {  local $SIG{__WARN__} = sub {1}; 
+                local $SIG{__DIE__} = 'DEFAULT';
+                POE::Filter::Reference->new( $ft );
+             };
+        warn "$ft: $@" if DEBUG and $@;
+    }
 
     return $ret unless $params->{processes};
 
@@ -284,6 +294,7 @@ sub _child
         return;
     }
     if( $op eq 'lose' ) {
+        DB::disable_profile() if $INC{'Devel/NYTProf.pm'};
         $heap->{child_sessions}--;
         if( $heap->{child_sessions} > 0 ) {
             DEBUG and warn "$$: still have a child session";
@@ -296,6 +307,7 @@ sub _child
     }
     unless( $heap->{wheel} ) {  # no wheel == GAME OVER
         # DEBUG and 
+        $INC{'Test/More.pm'} or 
             warn "$$: }}}}}}}}}}}}}}} Game over\n";
         # XXX: Using shutdown is a stop-gap measure.  Maybe the daemon
         # wants to stay alive even if IKC was shutdown...
@@ -365,9 +377,9 @@ sub babysit
                 $time=eval{$table{$pid}->utime + $table{$pid}->stime};
                 warn $@ if $@;
                 # utime and stime are Linux-only :(
-                $time /= 1_000_000 if $time;    # in micro-seconds
+                $time /= 1_000_000 if $time;    # micro-seconds -> seconds
 
-                if($time and $time > 1200) { # arbitrary limit of 20 minutes
+                if($time and $time > 1200) {    # arbitrary limit of 20 minutes
                     $rogues{$pid}=$table{$pid};
                         warn "$$: $pid has gone rogue, time=$time s\n";
                 } else {
@@ -554,6 +566,7 @@ sub accept
     my ($heap, $kernel, $handle, $peer_host, $peer_port) = 
             @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
+    T->start( 'IKC' );
     if(DEBUG) {
         if($peer_port) {        
             warn "$$: Server connection from ", inet_ntoa($peer_host), 
@@ -571,12 +584,18 @@ sub accept
         return;
     }
 
+    DB::enable_profile() if $INC{'Devel/NYTProf.pm'};
+
     DEBUG and warn "$$: Server kernel_aliases=", join ',', @{$heap->{kernel_aliases}||[]};
 
                                         # give the connection to a channel
     POE::Component::IKC::Channel->spawn(
-                handle=>$handle, name=>$heap->{name},
-                unix=>$heap->{unix}, aliases=>[@{$heap->{kernel_aliases}||[]}]);
+                handle=>$handle, 
+                name=>$heap->{name},
+                unix=>$heap->{unix}, 
+                aliases=>[@{$heap->{kernel_aliases}||[]}],
+                protocol=>$heap->{protocol}
+            );
 
     _concurrency_up($heap);
         
@@ -646,7 +665,12 @@ sub fork
 
         # This resets some kernel data that was preventing the child process's
         # kernel from becoming IDLE
-        $kernel->_data_sig_initialize;
+        if( $kernel->can( 'has_forked' ) ) {
+            $kernel->has_forked;
+        }
+        else {
+            $kernel->_data_sig_initialize;
+        }
 
         # Clean out stuff that the parent needs but not the children
         $heap->{'is a child'}   = 1;        # don't allow fork
@@ -818,13 +842,6 @@ sub __peek
 {
     my($verbose)=@_;
     eval {
-        require POE::API::Peek;
-    };
-    if($@) {
-        DEBUG and warn "Failed to load POE::API::Peek: $@";
-        return;
-    }
-    eval {
         require POE::Component::Daemon;
     };
     unless( $@ ) {
@@ -834,6 +851,13 @@ sub __peek
         return 1;
     }
 
+    eval {
+        require POE::API::Peek;
+    };
+    if($@) {
+        DEBUG and warn "Failed to load POE::API::Peek: $@";
+        return;
+    }
     my $api=POE::API::Peek->new();
     my @queue = $api->event_queue_dump();
     
@@ -960,7 +984,7 @@ POE::Component::IKC::Server - POE Inter-kernel Communication server
     POE::Component::IKC::Server->spawn(
         ip=>$ip, 
         port=>$port,
-        name=>'Server',);
+        name=>'Server');
     ...
     $poe_kernel->run();
 
@@ -1050,6 +1074,16 @@ Defaults to 0 (unlimited).
 Note that this is per-IKC::Server instance;  if you have several ways of
 connecting to a give IKC server (for example, both an TCP/IP port and unix
 pipe), they will not share the conncurrent connection count.
+
+=item C<protocol>
+
+Which IKC negociation protocol to use.  The original protocol (C<IKC>) was
+synchronous and slow.  The new protocol (C<IKC0>) sends all information at
+once.  IKC0 will degrade gracefully to IKC, if the client and server don't
+match.
+
+Default is IKC0.
+
 
 =back
 

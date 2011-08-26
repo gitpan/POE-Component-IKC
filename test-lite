@@ -12,6 +12,7 @@ DEBUG and warn "$$: Connect\n";
 my $poe=create_ikc_client(
         port=>$port,
         name=>$name,
+        protocol=>'IKC0'
     );
 
 die $POE::Component::IKC::ClientLite::error unless $poe;
@@ -23,6 +24,7 @@ $n=$poe->post_respond('test/add_1'=>$n) or die $poe->error;
 unless( $norecon ) {
     DEBUG and warn "$$: disconnect\n";
     $poe->{remote}{socket}->close;          # test autoreconnect
+    $poe->{protocol} = 'IKC';               # test fallback
 }
 else {
     sleep 1;

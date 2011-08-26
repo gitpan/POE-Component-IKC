@@ -1,7 +1,7 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 495 2009-05-08 19:46:42Z fil $
+# $Id: Responder.pm 793 2011-08-26 14:29:48Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -21,12 +21,13 @@ use Data::Dumper;
 
 use POE qw(Session);
 use POE::Component::IKC::Specifier;
+use POE::Component::IKC::Timing;
 use Scalar::Util qw(reftype);
 
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2200';
+$VERSION = '0.2300';
 
 sub DEBUG { 0 }
 
@@ -1301,7 +1302,7 @@ sub monitor
 
 #----------------------------------------------------
 # Tell monitors about something in foreign kernel
-# $rid == kernel name (in which case we ALSO inform about alises) or alias
+# $rid == kernel name (in which case we ALSO inform about aliases) or alias
 #         or * (tell every monitor about something... future use)
 # $event == name of event we are informing about
 # @params == other stuff
@@ -1365,10 +1366,6 @@ sub inform_monitors
 # kernel.  Currently, the thunks are used as a "proof of concept" and
 # to accur extra over head. :)
 # 
-# The original idea was to make sure that $_[SENDER] would be something
-# valid to the posted state.  However, garbage collection becomes a problem
-# If we are to allow the poste session to "hold on to" $_[SENDER]. 
-#
 # On the first request, a thunk is created.  It is kept alive with an alias.
 # On the next request, we check to see if the extref_count is zero.  If it
 # is, we reuse the same request.  If not, we create a new thunk and continue
@@ -1385,7 +1382,6 @@ use strict;
 
 use Carp;
 use Data::Dumper;
-use POE::API::Peek;
 use POE::Component::IKC;
 use POE::Session;
 use POE;
@@ -1398,7 +1394,6 @@ sub DEBUG2 { 0 }
     my $NAME=__PACKAGE__.'00000000';
     $NAME=~s/\W+//g;
     my $current_thunk;
-    my $API;
 
     #------------------------------
     sub thunk
@@ -1426,20 +1421,25 @@ sub DEBUG2 { 0 }
                 args => [++$NAME]
             );
 
-        $current_thunk = "$thunk";
+        $current_thunk = $thunk->ID;
     }
 
     #------------------------------
     sub __active_thunk 
     {
         return unless $current_thunk;
-        $API ||= POE::API::Peek->new;
-        if( $API->resolve_session_to_id( $current_thunk ) ) {
-            if( 0==$API->get_session_extref_count( $current_thunk ) ) {
+        # 2009/05 - These next 2 lines call undocumented internal methods of 
+        # the kernel.  If the kernel changes, they will break.
+        # If they break, please contact gwyn-at-cpan.org.
+        # 2011/08 - These have been changed for 1.311
+        if( $poe_kernel->_data_ses_exists( $current_thunk ) ) {
+            my $count = $poe_kernel->_data_extref_count_ses( $current_thunk );
+            if( 0==$count ) {
                 DEBUG and warn "$$: $NAME reuse\n";
                 return 1;
             }
-            $poe_kernel->post( $current_thunk => '__active' );
+            DEBUG and warn "$$: thunk count=$count\n";
+            $poe_kernel->call( $current_thunk => '__active' );
         }
         undef( $current_thunk );
         return;
@@ -1459,7 +1459,8 @@ sub _start
 sub __active
 {
     my($kernel, $heap) = @_[KERNEL, HEAP];
-    DEBUG and warn "$$: $heap->{name} active\n";
+    DEBUG and 
+        warn "$$: $heap->{name} active\n";
     $kernel->alias_set( delete $heap->{alias} ) if $heap->{alias};
     return 1;
 }

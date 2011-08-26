@@ -7,10 +7,9 @@ WriteMakefile(
     DISTNAME => 'POE-Component-IKC',
     dist=>{COMPRESS=>'gzip -9f', EXT=>'gz'},
     PREREQ_PM =>{
-            POE          => 1,
+            POE          => 1.311,
             Scalar::Util => 1,
-            Test::More   => 0.6,
-            POE::API::Peek => 1
+            Test::More   => 0.6
         },
     ABSTRACT => 'Inter-Kernel Communication for POE',
     LICENSE => 'perl'    

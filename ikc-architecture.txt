@@ -55,7 +55,7 @@ IKC::Channel       IKC::Channel       IKC::Channel       IKC::Channel
 
 
 
-Channel negociation
+Channel negociation (IKC)
 
     Server               Client
     --<-- HELLO           --<--
@@ -82,5 +82,14 @@ Channel negociation
     --<-- WORLD           --<-- 
     -->-- UP              -->-- 
 
+
 Negociation is now over and both sides switch to Filter::Reference.
 NOTE : last message *has* to come from server
+
+Channel negociation (IKC0)
+
+    Server                                                   Client
+    --<-- SETUP KernelName1,KernelName2,...;FREEZER Storable --<--
+    -->-- SETUP KernelName1,KernelName2,...;FREEZER Storable -->--
+
+Negociation is now over and both sides switch to Filter::Reference.

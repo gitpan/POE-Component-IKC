@@ -1,7 +1,7 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 494 2009-05-08 18:36:12Z fil $
+# $Id: Channel.pm 780 2011-08-16 18:43:40Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -21,15 +21,31 @@ use POE qw(Wheel::ListenAccept Wheel::ReadWrite Wheel::SocketFactory
            Driver::SysRW Filter::Reference Filter::Line
           );
 use POE::Component::IKC::Responder;
+use POE::Component::IKC::Protocol;
 use Data::Dumper;
+
 # use Net::Gen ();
+
+use Time::HiRes qw( gettimeofday tv_interval );
 
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = '0.2200';
+$VERSION = '0.2300';
 
-sub DEBUG { 0 }
+sub DEBUG () { 0 }
+
+BEGIN {
+    no strict 'refs';
+    unless( defined &TIMING ) {
+        if( $ENV{IKC_TIMING} ) { *TIMING = sub () { 1 } } 
+        else                   { *TIMING = sub () { 0 } }
+    }
+    unless( defined &PROTOCOL ) {
+        if( $ENV{IKC_PROTOCOL} ) { *PROTOCOL = sub () { 1 } } 
+        else                     { *PROTOCOL = sub () { 0 } }
+    }
+}
 
 ###############################################################################
 # Channel instances are created by the listening session to handle
@@ -42,7 +58,7 @@ sub DEBUG { 0 }
 sub create_ikc_channel
 {
     my %p;
-    @p{qw(handle name on_connect subscribe rname unix aliases serializers)}
+    @p{qw(handle name on_connect subscribe rname unix aliases serializers protocol)}
             = @_;
     return __PACKAGE__->spawn(%p);
 }
@@ -69,10 +85,12 @@ sub spawn
                     server_001 => \&negociate_001,
                     server_002 => \&server_002,
                     server_003 => \&server_003,
+                    server_010 => \&server_010,
                     client_000 => \&client_000,
                     client_001 => \&negociate_001,
                     client_002 => \&client_002,
                     client_003 => \&client_003,
+                    client_010 => \&client_010,
                     'sig_INT'  => \&sig_INT
                },
                args => [\%params]
@@ -84,6 +102,11 @@ sub spawn
 sub channel_start 
 {
     my ($kernel, $heap, $session, $p) = @_[KERNEL, HEAP, SESSION, ARG0];
+
+    if( TIMING ) {
+        $heap->{start_time} = [ gettimeofday ];
+        delete $heap->{last_time};
+    }
 
     my @names;
     push @names, $p->{name} if $p->{name};
@@ -98,15 +121,15 @@ sub channel_start
     $heap->{session_alias} = $alias;
 
     # all clients have $on_connect defined, even if sub {}
-    my $server=not defined $p->{on_connect};
+    $heap->{is_server} = not $p->{client};
     DEBUG and 
-        warn "$$: We are a ".($server ? 'server' : 'client')."\n";
+        warn "$$: We are a ".($heap->{is_server} ? 'server' : 'client')."\n";
 
     if($p->{unix}) {
         $p->{unix}=~s/[^-:.\w]+/_/g;
         push @names, "unix:$p->{unix}";
 
-        unless($server) {
+        unless($heap->{is_server}) {
             $names[-1].=":$$-".fileno($p->{handle});
         }
     }
@@ -115,6 +138,8 @@ sub channel_start
         $name[1]=inet_ntoa($name[1]);
         push @names, join ':', @name[1,0];
     }
+
+    DEBUG and warn "$$: Names: ", join ',', @names;
     $heap->{kernel_name}=shift @names;
     $heap->{kernel_aliases}=\@names;
     
@@ -134,7 +159,7 @@ sub channel_start
         $n=~tr(/\\)(--);
         $heap->{remote_kernel}="unix:$n:$$:".
                                     fileno($p->{handle});
-        $heap->{temp_remote_kernel}="unix:n" if $p->{on_connect};
+        $heap->{temp_remote_kernel}="unix:n" unless $heap->{is_server};
 
 
         # we need to have unique aliases for remote kernels
@@ -163,7 +188,7 @@ sub channel_start
     $heap->{subscribe}=$p->{subscribe} 
             if ref($p->{subscribe}) and @{$p->{subscribe}};
 
-    unless($server) {
+    unless($heap->{is_server}) {
         if(ref($p->{serializers}) and @{$p->{serializers}}) {
             $heap->{serializers}=$p->{serializers};
 #        } else {
@@ -173,8 +198,19 @@ sub channel_start
             warn __PACKAGE__, " Serializers: ", 
                                         join(', ', @{$heap->{serializers}||[]}), "\n";
     }
+    
+    # Setup negociation
+    $p->{protocol} ||= 'IKC';
+    if( $p->{protocol} eq 'IKC0' ) {
+        PROTOCOL and warn "$$: Using protocol IKC0\n";
+        _set_phase($kernel, $heap, '010');
+    }
+    else {
+        PROTOCOL and warn "$$: Using protocol IKC\n";
+        _set_phase($kernel, $heap, '000');
+    }
 
-    _set_phase($kernel, $heap, '000');
+    # Register this channel
     my $ikc = eval { $kernel->alias_resolve( 'IKC' ) };
     if( $ikc ) {
         $kernel->call( $ikc, 'register_channel' );
@@ -190,7 +226,7 @@ sub channel_start
 sub _negociation_done
 {
     my($kernel, $heap)=@_;
-    DEBUG && 
+    DEBUG and
             warn "$$: Negociation done ($heap->{kernel_name}<->$heap->{remote_kernel}).\n";
 
     # generate this event on input
@@ -202,7 +238,9 @@ sub _negociation_done
         $heap->{filter}=POE::Filter::Reference->new();
     }
     # parsing I/O as references
-    $heap->{wheel_client}->set_filter($heap->{filter}); 
+    my $ft = $heap->{filter};
+    DEBUG and warn "$$: Filter is now $ft";
+    $heap->{wheel_client}->set_filter($ft); 
     delete $heap->{filter};
 
     create_ikc_responder();
@@ -213,11 +251,17 @@ sub _negociation_done
                 if $heap->{temp_remote_kernel} and 
                 not grep {$_ eq $heap->{temp_remote_kernel}} @$aliases;
 
+    DEBUG and 
+        warn "$$: Register remote as ", join ', ', @$aliases;
     # we need a globaly unique ID
     $heap->{remote_ID}=shift @$aliases;
 #    delete $heap->{remote_kernel};
     $kernel->call('IKC', 'register', $heap->{remote_ID}, $aliases);
+
+    TIMING and channel_log( $heap, "negociated" );
     
+    T->point( 'IKC', 'nego done' );
+
     # Now that we're set up properly
     if($heap->{subscribe}) {                # subscribe to wanted sessions
         $kernel->call('IKC', 'subscribe', $heap->{subscribe}, 'done');
@@ -253,9 +297,20 @@ sub channel_done
 
     if($heap->{on_connect})            # or call the on_connect
     {
+        DEBUG and warn "$$: On connect\n";
         $heap->{on_connect}->();
         delete $heap->{on_connect};    
     }    
+
+    # Detach from parent session
+    unless( $heap->{is_server} ) {
+        # Only if we are a client.  Server uses 'lose' to detect disconnects
+        # for concurrency.
+        $_[KERNEL]->detach_myself;
+    }
+
+    TIMING and channel_log( $heap, "subscribed" );
+
 
     # wait until everything is sane before registering this
 #    $kernel->signal(INT=>'sig_INT');       # sig_INT() is in fact empty
@@ -265,20 +320,19 @@ sub channel_done
 #### DEAL WITH NEGOCIATION PHASE
 sub _set_phase
 {
-    my($kernel, $heap, $phase)=@_;
+    my($kernel, $heap, $phase, $line)=@_;
     if($phase eq 'ZZZ')
     {
         _negociation_done($kernel, $heap);
         return;
     } 
 
-    my $neg='server_';
-    $neg='client_' if($heap->{on_connect});
+    my $neg = $heap->{is_server} ? 'server_' : 'client_';
 
         # generate this event on input
     $heap->{'wheel_client'}->event(InputEvent => $neg.$phase);
     DEBUG && warn "Negociation phase $neg$phase.\n";
-    $kernel->yield($neg.$phase);                # Start the negociation phase
+    $kernel->yield($neg.$phase, $line);     # Start the negociation phase
     return;
 }
 
@@ -291,6 +345,9 @@ sub server_000
         # wait for client to send HELLO
     } 
     elsif( $line =~ /^HELLO IKC\d$/ ) {         # compatible with IKC1
+        $heap->{'wheel_client'}->put( 'NOT' );
+    }
+    elsif( $line =~ /^SETUP/ ) {                # compatible with IKC0
         $heap->{'wheel_client'}->put( 'NOT' );
     }
     elsif( $line eq 'HELLO' ) {
@@ -505,6 +562,124 @@ sub client_003
 }
 
 
+##############################################################################
+sub client_010
+{
+    my ($heap, $kernel, $line)=@_[HEAP, KERNEL, ARG0];
+
+    DEBUG and $line and warn "Client010: $line";
+
+    unless(defined $line) {
+        # TODO : make sure all serializers load
+        # T->point( 'IKC', 'first line' );
+        my $setup = __build_setup( $heap, $heap->{serializers} );
+        # T->point( 'IKC', 'build_setup' );
+        DEBUG and warn "Client010: sending $setup";
+        $heap->{wheel_client}->put( $setup );
+    } 
+    elsif( $line eq 'NOT' ) {
+        PROTOCOL and warn "$$: Using protocol IKC (fallback)\n";
+        _set_phase( $kernel, $heap, '000' );
+    }
+    elsif($line =~ /^SETUP (.+)$/) {
+        # T->point( IKC => 'got SETUP' );
+        DEBUG and warn "$$: Remote server setup as $1\n";
+        my( $K, $freezer, $bad) = __neg_setup( $1 );
+        unless( 1==@$freezer ) {
+            warn "Server didn't send one freezer in $line\n";
+            $bad++;
+        }
+
+        if( $bad ) {
+            $heap->{wheel_client}->put( 'NOT' );
+            return;
+        }
+        # Register these kernel alias with the responder
+        $heap->{remote_aliases} = $K;
+        # Build the filter we shall use later
+        $heap->{filter} = eval { POE::Filter::Reference->new( $freezer->[0] ) };
+        die "Unable to build filter: $@" if $@;
+        die "Unable to build filter $freezer->[0]" unless $heap->{filter};
+        # T->point( IKC => 'got SETUP' );
+        _set_phase( $kernel, $heap, 'ZZZ' );
+    } 
+    else {
+        warn "Server sent '$line' during negociation phase 002\n";
+        $heap->{wheel_client}->put('NOT');
+    }
+}
+
+sub server_010
+{
+    my ($heap, $kernel, $line)=@_[HEAP, KERNEL, ARG0];
+
+    DEBUG and $line and warn "Server010: $line";
+
+    unless(defined $line) {
+        # wait for client
+    }
+    elsif( $line =~ /^HELLO IKC\d$/ ) {         # compatible with IKC1
+        $heap->{'wheel_client'}->put( 'NOT' );
+    }
+    elsif( $line eq 'HELLO' ) {
+        PROTOCOL and warn "$$: Using protocol IKC (fallback)\n";
+        _set_phase( $kernel, $heap, '000', $line );
+        return;
+    }
+    elsif( $line =~ /^SETUP (.+)$/ ) {
+        DEBUG and warn "$$: Remote client setup as $1\n";
+        my( $K, $freezer, $bad) = __neg_setup( $1 );
+
+        my $filter;
+        if( not $bad ) {
+            # Build the filter we shall use later
+            foreach my $ft ( @$freezer ) {
+                $filter = $ft;
+                $heap->{filter} = eval {  POE::Filter::Reference->new( $ft ) };
+                last if $heap->{filter};
+                DEBUG and warn "Client wanted $ft, but we can't: $@";
+            }
+        }
+        unless( $heap->{filter} ) {
+            warn "None of the filters the client wants are OK: ", join ', ', @$freezer;
+            $bad++;
+        }
+
+        if( $bad ) {
+            $heap->{wheel_client}->put( 'NOT' );
+            return;
+        }
+        # Register these kernel alias with the responder
+        $heap->{remote_aliases} = $K;
+
+        # Send our SETUP back
+        my @freezers = ( $filter );
+        my $setup = __build_setup( $heap, [$filter] );
+        DEBUG and warn "Server010: sending $setup";
+        $heap->{wheel_client}->put( $setup );  
+
+        # Move to next phase
+        _set_phase( $kernel, $heap, 'ZZZ' );
+    }
+}
+
+sub __build_setup
+{
+    my( $heap, $freezers ) = @_;
+    my $aliases = [ $poe_kernel->ID, 
+                    $heap->{kernel_name}, 
+                    @{$heap->{kernel_aliases}} 
+                  ];
+    return POE::Component::IKC::Protocol::__build_setup( $aliases, $freezers );
+}        
+
+sub __neg_setup
+{
+    return POE::Component::IKC::Protocol::__neg_setup( $_[0] );
+}
+
+
+
 #----------------------------------------------------
 # This state is invoked for each error encountered by the session's
 # ReadWrite wheel.
@@ -535,7 +710,7 @@ sub _channel_unregister
     if($heap->{remote_ID}) {
         DEBUG and warn <<WARN;
 ------------------------------------------
-              UNREGISTER $$
+              UNREGISTER $$ $heap->{remote_ID}
 ------------------------------------------
 WARN
         # 2005/06 Tell IKC we closed the connection
@@ -576,6 +751,13 @@ sub _close_channel
         $poe_kernel->alias_remove( delete $heap->{session_alias} );
     }
 
+    if( TIMING ) {
+        channel_log( $heap, "close" );
+        delete $heap->{start_time};
+        delete $heap->{last_time};
+    }
+    T->point( 'IKC', 'close' );
+
     return;   
 }
 
@@ -600,6 +782,8 @@ sub channel_stop
     DEBUG && 
         warn "$$: *** Channel will shut down.\n";
     _close_channel($heap);
+    T->end( 'IKC' );
+
     return "channel-$_[SESSION]";
 }
 
@@ -614,6 +798,10 @@ sub channel_stop
 sub channel_receive
 {
     my ($kernel, $heap, $request) = @_[KERNEL, HEAP, ARG0];
+
+    T->point( 'IKC', 'receive' );
+
+    TIMING and channel_log( $heap, "receive" );
 
     DEBUG && 
         warn "$$: Received data...\n";
@@ -639,6 +827,8 @@ sub channel_send
 {
     my ($heap, $request)=@_[HEAP, ARG0];
 
+    TIMING and channel_log( $heap, "send" );
+
     DEBUG && 
         warn "$$: Sending data...\n";
         # add our name so the foreign channel can find us
@@ -661,6 +851,8 @@ sub channel_send
         $type = "shutdown" if $heap->{shutdown};
         warn "$$: Attempting to put to a $type channel! ". Dumper $what;
     }
+    T->point( 'IKC', 'send' );
+
     return 1;
 }
 
@@ -699,8 +891,38 @@ sub sig_INT
     return;
 }
 
-###########################################################################
+#----------------------------------------------------
+sub channel_log
+{
+    my( $heap, $when ) = @_;
+    return unless $heap->{start_time};
+    my $now = [ gettimeofday ];
+    my $el = tv_interval( $heap->{start_time}, $now );
+    my $time = _delta_time( $el );
 
+    if( $heap->{last_time} ) {
+        $el = tv_interval( $heap->{last_time}, $now );
+        $time .= " +"._delta_time( $el );
+    }
+    $heap->{last_time} = $now;
+    print STDERR "$$: CHANNEL $time $when\n";
+}
+
+sub _delta_time
+{
+    my( $el ) = @_;
+
+    if( $el > 1 ) {
+        return sprintf( "%.3fs", $el);
+    } 
+    $el *= 1000;            # microseconds -> milliseconds
+    if( $el > 10 ) {
+        return sprintf( "%ims", int $el);
+    } 
+    return sprintf( "%.1gms", $el);
+}
+
+###########################################################################
 
 1;
 __END__
@@ -790,6 +1012,15 @@ Arrayref or scalar of the packages that you want to use for data
 serialization.  A serializer package requires 2 functions : freeze (or
 nfreeze) and thaw.  See C<POE::Component::IKC::Client>.
 
+=item C<protocol>
+
+Which IKC negociation protocol to use.  The original protocol (C<IKC>) was
+synchronous and slow.  The new protocol (C<IKC0>) sends all information at
+once.  IKC0 will degrade gracefully to IKC, if the client and server don't
+match.
+
+Default currently IKC but will move to IKC0 when I'm confident in the new
+protocol.
 
 =back
 

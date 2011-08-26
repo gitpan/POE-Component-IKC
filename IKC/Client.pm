@@ -1,7 +1,7 @@
 package POE::Component::IKC::Client;
 
 ############################################################
-# $Id: Client.pm 494 2009-05-08 18:36:12Z fil $
+# $Id: Client.pm 794 2011-08-26 14:35:27Z fil $
 # Based on refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -24,7 +24,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_client);
-$VERSION = '0.2200';
+$VERSION = '0.2300';
 
 sub DEBUG { 0 }
 
@@ -38,6 +38,15 @@ sub create_ikc_client
 {
     my(%parms)=@_;
     $parms{package}||=__PACKAGE__;
+    $parms{package}->spawn( %parms );
+}
+
+sub spawn
+{
+    T->start( 'IKC' );
+    my( $package, %parms ) = @_;
+    $parms{package} ||= $package;
+
     $parms{on_connect}||=sub{};         # would be silly for this to be blank
                                         # 2001/04 not any more
     if($parms{unix}) {
@@ -47,6 +56,7 @@ sub create_ikc_client
     }
     $parms{name}||="Client$$";
     $parms{subscribe}||=[];
+    $parms{protocol}||='IKC0';
     my $defaults;
     if($parms{serializers}) {               # use ones provided
                                             # make sure it's an arrayref
@@ -80,13 +90,6 @@ sub create_ikc_client
                                 [qw(_start _stop _child error shutdown connected)]],
             args => [\%parms]
         )->ID;
-}
-
-sub spawn
-{
-    my($package, %params)=@_;
-    $params{package}=$package;
-    return create_ikc_client(%params);
 }
 
 sub _package_exists
@@ -134,6 +137,7 @@ sub _start {
     $heap->{subscribe}=$parms->{subscribe};
     $heap->{aliases}=$parms->{aliases};
     $heap->{serializers}=$parms->{serializers};
+    $heap->{protocol}=$parms->{protocol};
 
     # set up local names for kernel
     my @names=($heap->{name});
@@ -173,14 +177,15 @@ sub connected
     my ($heap, $handle, $addr, $port) = @_[HEAP, ARG0, ARG1, ARG2];
     DEBUG and warn "Client connected\n"; 
 
-
+    T->point( IKC => 'connected' );
                         # give the connection to a Channel
-    $heap->{channel} = create_ikc_channel($handle, 
-                        @{$heap}{qw(name on_connect subscribe
-                                    remote_name unix aliases serializers)});
-    delete @{$heap}{qw(name on_connect subscribe remote_name wheel aliases
-                        serializers)};
-    
+    my %p = ( handle=>$handle, addr=>$addr, port=>$port, client=>1 );
+    my @list = qw(name on_connect subscribe remote_name wheel aliases unix
+                   serializers protocol);
+    @p{@list} = @{$heap}{@list};
+    $p{rname} = delete $p{remote_name};
+    $heap->{channel} = POE::Component::IKC::Channel->spawn( %p );
+    return;
 }
 
 sub shutdown
@@ -229,8 +234,8 @@ POE::Component::IKC::Client - POE Inter-Kernel Communication client
         ip=>$ip, 
         port=>$port,
         name=>"Client$$",
-        on_connect=>\&create_sessions,
-        subscribe=>[qw(poe:/*/timserver)],);
+        subscribe=>[qw(poe:/*/timserver)]
+    );
     ...
     $poe_kernel->run();
 
@@ -349,6 +354,16 @@ all modules come with the core Perl distribution.
 
 It should be noted that you should have the same version of C<Storable> on
 both sides, because some versions aren't mutually compatible.
+
+=item C<protocol>
+
+Which IKC negociation protocol to use.  The original protocol (C<IKC>) was
+synchronous and slow.  The new protocol (C<IKC0>) sends all information at
+once.  IKC0 will degrade gracefully to IKC, if the client and server don't
+match.
+
+Default is IKC0.
+
 
 =back
 

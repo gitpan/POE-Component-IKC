@@ -8,6 +8,7 @@ IKC/Server.pm
 IKC/Specifier.pm
 IKC/Freezer.pm
 IKC/LocalKernel.pm
+IKC/Timing.pm
 IKC.pod
 IKC.pm
 MANIFEST
@@ -20,6 +21,7 @@ test-client
 test-lite
 test-thunk
 t/00_compile.t
+t/00_info.t
 t/01_pod.t
 t/02_pod_coverage.t
 t/05_perl_freezer.t
