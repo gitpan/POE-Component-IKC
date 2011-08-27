@@ -9,7 +9,8 @@ package POE::Component::IKC::Timing;
 # Contributed portions of IKC may be copyright by their respective
 # contributors.
 
-package T;
+package     # Hide from the CPAN indexer
+    T;
 
 use strict;
 use warnings;
