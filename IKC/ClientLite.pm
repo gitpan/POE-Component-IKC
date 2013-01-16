@@ -1,7 +1,7 @@
 package POE::Component::IKC::ClientLite;
 
 ############################################################
-# $Id: ClientLite.pm 819 2011-08-27 01:57:36Z fil $
+# $Id: ClientLite.pm 1070 2013-01-16 19:38:53Z fil $
 # By Philp Gwyn <fil@pied.nu>
 #
 # Copyright 1999-2011 Philip Gwyn.  All rights reserved.
@@ -26,7 +26,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_client);
-$VERSION = '0.2302';
+$VERSION = '0.2303';
 
 sub DEBUG { 0 }
 
@@ -183,17 +183,17 @@ sub _protocol_IKC0
     {
         chomp($resp);
         return if $resp eq 'NOT';                 # move to phase 000
-        die "Phase 010: Invalid response from $name: $resp\n" unless $resp =~ /^SETUP (.+)$/;
-        my( $K, $freezer, $bad) = 
-                            POE::Component::IKC::Protocol::__neg_setup( $1 );
-        if( $bad ) {
+        die "Phase 010: Invalid response from $name: $resp\n" 
+                                unless $resp =~ /^SETUP (.+)$/;
+        my $neg = POE::Component::IKC::Protocol::__neg_setup( $1 );
+        if( $neg->{bad} ) {
             $sock->print( 'NOT' );
             next;
         }
-        die "Phase 010: Refused $self->{serialiser}, wants $freezer" 
-                            unless $freezer->[0] eq $self->{serialiser};
-        $remote->{name} = $K->[0];
-        foreach my $a ( @$K ) {
+        die "Phase 010: Refused $self->{serialiser}, wants $neg->{freezer}[0]" 
+                            unless $neg->{freezer}[0] eq $self->{serialiser};
+        $remote->{name} = $neg->{kernel}[0];
+        foreach my $a ( @{ $neg->{kernel} } ) {
             $remote->{aliases}{$a} = 1;
         }
         return 1;

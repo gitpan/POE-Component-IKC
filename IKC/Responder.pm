@@ -1,7 +1,7 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 819 2011-08-27 01:57:36Z fil $
+# $Id: Responder.pm 1070 2013-01-16 19:38:53Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2302';
+$VERSION = '0.2303';
 
 sub DEBUG { 0 }
 
@@ -113,8 +113,9 @@ sub request
 # Register foreign kernels so that we can send states to them
 sub register
 {
-    my($heap, $channel, $rid, $aliases) = @_[HEAP, SENDER, ARG0, ARG1];
-    $heap->{self}->register($channel, $rid, $aliases);
+    my($heap, $channel, $rid, $aliases, $pid) = @_[HEAP, SENDER, ARG0..$#_];
+    # warn "pid=$pid" if $pid;
+    $heap->{self}->register($channel, $rid, $aliases, $pid);
 }
 
 #----------------------------------------------------
@@ -147,7 +148,7 @@ sub default
 # negociating
 sub register_channel
 {
-    my($heap, $channel, $rid, $aliases) = @_[HEAP, SENDER, ARG0, ARG1];
+    my($heap, $channel) = @_[HEAP, SENDER];
     $heap->{self}->register_channel($channel);
 }
 
@@ -502,7 +503,7 @@ sub request
 # Register foreign kernels so that we can send states to them
 sub register
 {
-    my($self, $channel, $rid, $aliases)=@_;
+    my($self, $channel, $rid, $aliases, $pid)=@_;
     $aliases=[$aliases] if not ref $aliases;
 
     my($kernel)=@{$self}{qw(poe_kernel)};
@@ -537,7 +538,8 @@ sub register
         $self->{kernel}{$name}=$rid;    # find real remote ID
         $self->{remote}{$name}||=[];    # list of proxy sessions
     }
-    $self->inform_monitors($rid, 'register');
+    # warn "pid=$pid" if $pid;
+    $self->inform_monitors($rid, 'register', $pid);
 
     return 1;
 }

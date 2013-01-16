@@ -17,30 +17,40 @@ sub __build_setup
 {
     my( $aliases, $freezers ) = @_;
     return 'SETUP '.join ';', 'KERNEL='.join( ',', @$aliases ), 
-                              'FREEZER='.join( ',', @$freezers );
+                              'FREEZER='.join( ',', @$freezers ),
+                              "PID=$$";
 }        
 
 sub __neg_setup
 {
     my( $setup ) = @_;
-    my( @kernel, @freezer, $bad );
+    my $neg = {
+            kernel => [],
+            freezer => [],
+            bad => 0,
+            pid => 0
+        };
     foreach my $bit ( split ';', $1 ) {
         if( $bit =~ m/KERNEL=(.+)/ ) {
-            @kernel = split ',', $1;
+            push @{ $neg->{kernel} }, split ',', $1;
         }
         elsif( $bit =~ m/FREEZER=(.+)/ ) {
-            @freezer = split ',', $1;
+            push @{ $neg->{freezer} }, split ',', $1;
+        }
+        elsif( $bit =~ m/PID=(\d+)/ ) {
+            # warn "pid=$1";
+            $neg->{pid} = $1;
         }
         else {
             warn "Server sent unknown setup '$bit' during negociation\n";
-            $bad++;
+            $neg->{bad}++;
         }
     }
-    unless( @kernel ) {
+    unless( @{ $neg->{kernel} } ) {
         warn "Server didn't send KERNEL in $setup\n";
-        $bad++;
+        $neg->{bad}++;
     }
-    return \@kernel, \@freezer, $bad;
+    return $neg;
 }
 
 1;

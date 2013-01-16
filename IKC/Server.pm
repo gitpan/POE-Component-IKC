@@ -1,7 +1,7 @@
 package POE::Component::IKC::Server;
 
 ############################################################
-# $Id: Server.pm 819 2011-08-27 01:57:36Z fil $
+# $Id: Server.pm 1070 2013-01-16 19:38:53Z fil $
 # Based on refserver.perl and preforkedserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_server);
-$VERSION = '0.2302';
+$VERSION = '0.2303';
 
 sub DEBUG { 0 }
 sub DEBUG_USR2 { 1 }
@@ -90,7 +90,7 @@ sub _select_define
     $on||=0;
 
     DEBUG and 
-        warn "_select_define (on=$on)";
+        warn "_select_define  (on=$on)";
 
     if($on) {
         $heap->{wheel}->resume_accept
@@ -119,7 +119,7 @@ sub _concurrency_up
     my( $heap ) = @_;
     $heap->{concur_connections}++;
     DEBUG and 
-        warn "$$: $heap->{concur_connections} concurrent connections";
+        warn "$$: $heap->{concur_connections} concurrent connections (max $heap->{concurrency})";
     return unless $heap->{concurrency} > 0;
     if( $heap->{concur_connections} >= $heap->{concurrency} ) {
         DEBUG and 
@@ -306,8 +306,7 @@ sub _child
         return;
     }
     unless( $heap->{wheel} ) {  # no wheel == GAME OVER
-        # DEBUG and 
-        $INC{'Test/More.pm'} or 
+        ( DEBUG and not $INC{'Test/More.pm'} ) and
             warn "$$: }}}}}}}}}}}}}}} Game over\n";
         # XXX: Using shutdown is a stop-gap measure.  Maybe the daemon
         # wants to stay alive even if IKC was shutdown...
@@ -325,7 +324,7 @@ sub waste_time
     return if $heap->{'is a child'};
 
     unless($heap->{'been told we are parent'}) {
-        warn "$$: Telling everyone we are the parent\n";
+        $heap->{verbose} and warn "$$: Telling everyone we are the parent\n";
         $heap->{'been told we are parent'}=1;
         $kernel->signal($kernel, '__parent');
     }
@@ -383,7 +382,7 @@ sub babysit
                     $rogues{$pid}=$table{$pid};
                         warn "$$: $pid has gone rogue, time=$time s\n";
                 } else {
-                    # DEBUG and 
+                    DEBUG and 
                         warn "$$: child $pid has utime+stime=$time s\n"
                             if $time > 1;
                     $ok{$pid}=1;
@@ -602,16 +601,15 @@ sub accept
     return unless $heap->{children};
 
     if (--$heap->{connections} < 1) {
-        # DEBUG and 
+        DEBUG and 
                 warn "$$: {{{{{{{{{{{{{{{ Game over\n";
         $kernel->delay('waste_time');
         _delete_wheel( $heap );
         $::TRACE_REFCNT = 1;
 
     } else {
-        # DEBUG and 
+        DEBUG and 
                 warn "$$: $heap->{connections} connections left\n";
-        _select_define($heap, 0);
     }
 }
 
@@ -768,7 +766,7 @@ sub sig_INT
     return 0 if $heap->{"is a child"};
 
     if($heap->{children}) {
-        warn "$$ SIGINT\n";
+        $heap->{verbose} and warn "$$ SIGINT\n";
         $heap->{'die'}=1;
         # kill all events
         _delete_delays();               # get it OVER with
@@ -789,7 +787,7 @@ sub sig_TERM
     my ($kernel, $heap, $signal, $pid, $status) =
                 @_[KERNEL, HEAP, ARG0, ARG1, ARG2];
 
-    warn "$$ SIGTERM\n";
+    $heap->{verbose} and warn "$$ SIGTERM\n";
     $heap->{'die'}=1;
 
     _delete_wheel( $heap );

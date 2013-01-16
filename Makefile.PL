@@ -1,7 +1,7 @@
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    AUTHOR  => 'Philip Gwyn',
+    AUTHOR  => 'Philip Gwyn <gwyn -at- cpan.org>',
     NAME	=> 'POE::Component::IKC',
     VERSION_FROM => 'IKC.pm', # finds $VERSION
     DISTNAME => 'POE-Component-IKC',

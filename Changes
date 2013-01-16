@@ -1,5 +1,10 @@
 Revision history for Perl extension POE::Component::IKC.
 
+0.2303 16 Jan 2013
+    - Cleaned up cookie crumbs
+    - Removed erroneous call to _select_define in Server::accept
+        Thank you rbhardwaj (rt82685)
+
 0.2302 26 Aug 2011
     - Forgot IKC::Protocol  GAH!
         Thank you Gregor Herrmann

@@ -1,7 +1,7 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 819 2011-08-27 01:57:36Z fil $
+# $Id: Channel.pm 1070 2013-01-16 19:38:53Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -23,6 +23,7 @@ use POE qw(Wheel::ListenAccept Wheel::ReadWrite Wheel::SocketFactory
 use POE::Component::IKC::Responder;
 use POE::Component::IKC::Protocol;
 use Data::Dumper;
+use Devel::Size qw( total_size );
 
 # use Net::Gen ();
 
@@ -31,7 +32,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = '0.2302';
+$VERSION = "0.2303";
 
 sub DEBUG () { 0 }
 
@@ -256,7 +257,7 @@ sub _negociation_done
     # we need a globaly unique ID
     $heap->{remote_ID}=shift @$aliases;
 #    delete $heap->{remote_kernel};
-    $kernel->call('IKC', 'register', $heap->{remote_ID}, $aliases);
+    $kernel->call('IKC', 'register', $heap->{remote_ID}, $aliases, $heap->{remote_pid});
 
     TIMING and channel_log( $heap, "negociated" );
     
@@ -584,22 +585,23 @@ sub client_010
     elsif($line =~ /^SETUP (.+)$/) {
         # T->point( IKC => 'got SETUP' );
         DEBUG and warn "$$: Remote server setup as $1\n";
-        my( $K, $freezer, $bad) = __neg_setup( $1 );
-        unless( 1==@$freezer ) {
+        my $neg = __neg_setup( $1 );
+        unless( 1==@{ $neg->{freezer} } ) {
             warn "Server didn't send one freezer in $line\n";
-            $bad++;
+            $neg->{bad}++;
         }
 
-        if( $bad ) {
+        if( $neg->{bad} ) {
             $heap->{wheel_client}->put( 'NOT' );
             return;
         }
         # Register these kernel alias with the responder
-        $heap->{remote_aliases} = $K;
+        $heap->{remote_aliases} = $neg->{kernel};
+        $heap->{remote_pid} = $neg->{pid};
         # Build the filter we shall use later
-        $heap->{filter} = eval { POE::Filter::Reference->new( $freezer->[0] ) };
+        $heap->{filter} = eval { POE::Filter::Reference->new( $neg->{freezer}[0] ) };
         die "Unable to build filter: $@" if $@;
-        die "Unable to build filter $freezer->[0]" unless $heap->{filter};
+        die "Unable to build filter $neg->{freezer}[0]" unless $heap->{filter};
         # T->point( IKC => 'got SETUP' );
         _set_phase( $kernel, $heap, 'ZZZ' );
     } 
@@ -628,12 +630,12 @@ sub server_010
     }
     elsif( $line =~ /^SETUP (.+)$/ ) {
         DEBUG and warn "$$: Remote client setup as $1\n";
-        my( $K, $freezer, $bad) = __neg_setup( $1 );
+        my $neg = __neg_setup( $1 );
 
         my $filter;
-        if( not $bad ) {
+        if( not $neg->{bad} ) {
             # Build the filter we shall use later
-            foreach my $ft ( @$freezer ) {
+            foreach my $ft ( @{ $neg->{freezer} } ) {
                 $filter = $ft;
                 $heap->{filter} = eval {  POE::Filter::Reference->new( $ft ) };
                 last if $heap->{filter};
@@ -641,16 +643,18 @@ sub server_010
             }
         }
         unless( $heap->{filter} ) {
-            warn "None of the filters the client wants are OK: ", join ', ', @$freezer;
-            $bad++;
+            warn "None of the filters the client wants are OK: ", 
+                            join ', ', @{ $neg->{freezer} };
+            $neg->{bad}++;
         }
 
-        if( $bad ) {
+        if( $neg->{bad} ) {
             $heap->{wheel_client}->put( 'NOT' );
             return;
         }
         # Register these kernel alias with the responder
-        $heap->{remote_aliases} = $K;
+        $heap->{remote_aliases} = $neg->{kernel};
+        $heap->{remote_pid} = $neg->{pid};
 
         # Send our SETUP back
         my @freezers = ( $filter );
@@ -829,6 +833,10 @@ sub channel_send
 
     TIMING and channel_log( $heap, "send" );
 
+    my $size = total_size $request;
+    if( $size > 100*1024*1024 ) {
+        die "$$ Channel sending WAY too much data ($size bytes)";
+    }
     DEBUG && 
         warn "$$: Sending data...\n";
         # add our name so the foreign channel can find us
