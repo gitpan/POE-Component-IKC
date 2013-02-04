@@ -9,7 +9,8 @@ WriteMakefile(
     PREREQ_PM =>{
             POE          => 1.311,
             Scalar::Util => 1,
-            Test::More   => 0.6
+            Test::More   => 0.6,
+            Data::Dump   => 1
         },
     ABSTRACT => 'Inter-Kernel Communication for POE',
     LICENSE => 'perl'    

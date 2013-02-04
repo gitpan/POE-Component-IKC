@@ -3,7 +3,7 @@ package POE::Component::IKC;
 
 use strict;
 use vars qw( $VERSION );
-$VERSION='0.2303';
+$VERSION='0.2304';
 
 # Force CPAN to see this
 

@@ -32,7 +32,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = "0.2303";
+$VERSION = "0.2304";
 
 sub DEBUG () { 0 }
 

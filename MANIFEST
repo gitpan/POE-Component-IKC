@@ -51,4 +51,5 @@ dev/t_specifier
 dev/test_delete
 dev/uclient
 dev/userver
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
