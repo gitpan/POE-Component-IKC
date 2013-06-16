@@ -10,7 +10,8 @@ WriteMakefile(
             POE          => 1.311,
             Scalar::Util => 1,
             Test::More   => 0.6,
-            Data::Dump   => 1
+            Data::Dump   => 1,
+            Devel::Size  => 0.77
         },
     ABSTRACT => 'Inter-Kernel Communication for POE',
     LICENSE => 'perl'    

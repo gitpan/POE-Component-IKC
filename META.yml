@@ -19,7 +19,8 @@ no_index:
     - inc
 requires:
   Data::Dump: 1
+  Devel::Size: 0.77
   POE: 1.311
   Scalar::Util: 1
   Test::More: 0.6
-version: 0.2304
+version: 0.2305

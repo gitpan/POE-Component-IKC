@@ -29,6 +29,7 @@ our $fh = *STDERR;
 sub open
 {
     my( $package, $file ) = @_;
+    return unless TIMING;
     my $t = IO::File->new( ">> $file" );
     croak "Unable to open $file: $!" unless $t;
     $fh = $t;

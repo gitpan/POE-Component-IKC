@@ -1,7 +1,7 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 1070 2013-01-16 19:38:53Z fil $
+# $Id: Responder.pm 1077 2013-02-11 16:50:56Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2304';
+$VERSION = '0.2305';
 
 sub DEBUG { 0 }
 
