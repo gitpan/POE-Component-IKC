@@ -179,6 +179,7 @@ sub post1
 
     DEBUG and warn "Server: post1 $arg\n";
     $heap->{sender} = $_[SENDER]->ID;
+    ::note( "sender=$heap->{sender}" );
     $kernel->post( $_[SENDER], resp1 => $arg );
 }
 
@@ -210,6 +211,7 @@ sub post3
 
     ::isnt( $sender->ID, $heap->{sender}, "New thunk" );
     $heap->{sender2} = $sender->ID;
+    ::note( "sender2=$heap->{sender2}" );
     $kernel->post($sender, resp3 => $arg);
 
 }

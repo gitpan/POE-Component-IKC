@@ -1,7 +1,7 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 1226 2014-05-16 17:02:37Z fil $
+# $Id: Responder.pm 1228 2014-05-16 19:05:32Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2400';
+$VERSION = '0.2401';
 
 sub DEBUG { 0 }
 
@@ -1528,20 +1528,39 @@ sub DEBUG2 { 0 }
         # the kernel.  If the kernel changes, they will break.
         # If they break, please contact gwyn-at-cpan.org.
         # 2011/08 - These have been changed for 1.311
-        if( $poe_kernel->_data_ses_exists( $current_thunk ) ) {
-            my $count = $poe_kernel->[ POE::Kernel::KR_EXTRA_REFS() ]->count_session_refs( $current_thunk );
-            # my $count = $poe_kernel->_data_extref_count_ses( $current_thunk );
+        my $count = _ref_count( $current_thunk );
+        if( defined $count ) {
+            DEBUG and 
+                warn "$$: $NAME count=$count\n";
             if( 0==$count ) {
-                DEBUG and warn "$$: $NAME reuse\n";
+                DEBUG and 
+                    warn "$$: $NAME reuse\n";
                 return 1;
             }
-            DEBUG and warn "$$: thunk count=$count\n";
+            DEBUG and 
+                warn "$$: new thunk\n";
             $poe_kernel->call( $current_thunk => '__active' );
         }
         undef( $current_thunk );
         return;
     }
 }
+
+sub _ref_count
+{
+    my( $id ) = @_;
+    # This code is badly behaved!
+    return unless $poe_kernel->_data_ses_exists( $id );
+    if( $poe_kernel->can( '_data_extref_count_ses' ) ) {
+        return $poe_kernel->_data_extref_count_ses( $id )||0;
+    }
+    else {
+        # This is for the code that dngor had that extrefs as a sub object, not
+        # as a mixin'
+        $poe_kernel->[ POE::Kernel::KR_EXTRA_REFS() ]->count_session_refs( $id )||0;
+    }
+}
+
 
 #----------------------------------------------------
 sub _start

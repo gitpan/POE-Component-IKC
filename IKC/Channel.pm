@@ -1,7 +1,7 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 1226 2014-05-16 17:02:37Z fil $
+# $Id: Channel.pm 1228 2014-05-16 19:05:32Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -33,7 +33,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = "0.2400";
+$VERSION = "0.2401";
 
 sub DEBUG () { 0 }
 

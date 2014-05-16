@@ -96,6 +96,7 @@ sub pass
     my( $self, $test ) = @_;
     die "Unknown test '$test'" unless exists $self->{tests}{ $test };
     $self->{tests}{ $test } ++;
+    local $Test::Builder::Level = $Test::Builder::Level + 1;
     Test::More::pass( $test );
     return 1;
 }
@@ -105,6 +106,7 @@ sub fail
     my( $self, $test ) = @_;
     die "Unknown test '$test'" unless exists $self->{tests}{ $test };
     $self->{tests}{ $test } ++;
+    local $Test::Builder::Level = $Test::Builder::Level + 1;
     Test::More::fail( $test );
     return 0;
 }
