@@ -1,8 +1,8 @@
 package POE::Component::IKC::Freezer;
 
 ############################################################
-# $Id: Freezer.pm 1077 2013-02-11 16:50:56Z fil $
-# Copyright 2001-2011 Philip Gwyn.  All rights reserved.
+# $Id: Freezer.pm 1224 2014-05-15 18:49:21Z fil $
+# Copyright 2001-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 
@@ -15,7 +15,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(freeze thaw dclone);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
@@ -69,7 +69,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2001-2011 by Philip Gwyn.  All rights reserved.
+Copyright 2001-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

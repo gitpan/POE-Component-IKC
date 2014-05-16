@@ -20,7 +20,9 @@ sub server_io
 $|++;
 print "Creating sessions...\n";
 
-create_ikc_client(
+POE::Component::IKC::Responder->spawn(); # make sure the Responder exists
+
+POE::Component::IKC::Client->spawn(
             port=>31337,            
             name=>$NAME,
             subscribe=>[qw(poe://*/timeserver)],
@@ -33,7 +35,6 @@ POE::Session->new(
             $kernel->sig('USR1', 'hup');
             $kernel->alias_set('me');
 
-            create_ikc_responder(); # make sure the Responder exists
             $kernel->post('IKC', 'publish', 'me', [qw(pulse)]);
             $kernel->post('IKC', 'monitor', '*', 
                 {register=>'remote_register', unregister=>'remote_unregister',

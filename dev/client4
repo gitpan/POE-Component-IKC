@@ -85,7 +85,7 @@ sub create_me
 }
 
 $|++;
-create_ikc_client(
+POE::Component::IKC::Client->spawn(
     ip=>'localhost',
     port=>31336,
     name=>$name,

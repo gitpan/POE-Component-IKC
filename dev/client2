@@ -66,13 +66,13 @@ sub create_me
 }
 
 $|++;
-create_ikc_client(
+POE::Component::IKC::Client->spawn(
     port=>31337,
     name=>$name,
 #    subscribe=>[qw(poe://*/foo)],
     on_connect=>sub 
     {
-        create_ikc_client(
+        POE::Component::IKC::Client->spawn(
             on_connect=>\&create_me,
             port=>31337,
             name=>$name,

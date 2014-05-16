@@ -13,7 +13,7 @@ use POE::Component::IKC::Specifier;
 # Very simple server.  all it does is shutdown when 'goaway' is posted
 
 
-create_ikc_server(
+POE::Component::IKC::Server->spawn(
     unix=>($ENV{TMPDIR}||$ENV{TEMP}||'/tmp').'/userver',    
     name=>'shut-server');       
 

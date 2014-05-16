@@ -13,7 +13,7 @@ use POE::Component::IKC::Specifier;
 # Every 10 seconds, a 'pulse' event is sent to connected sessions.
 
 
-create_ikc_server(
+POE::Component::IKC::Server->spawn(
     port=>31336,                # elite--
     name=>'Pulse2');       
 

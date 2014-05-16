@@ -1,9 +1,9 @@
-# $Id: Proxy.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Proxy.pm 1224 2014-05-15 18:49:21Z fil $
 package POE::Component::IKC::Proxy;
 
 ##############################################################################
-# $Id: Proxy.pm 1077 2013-02-11 16:50:56Z fil $
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# $Id: Proxy.pm 1224 2014-05-15 18:49:21Z fil $
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -21,7 +21,7 @@ use POE::Component::IKC::Specifier;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_proxy);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
@@ -67,9 +67,10 @@ sub _start
     $heap->{callback}=[];
     _add_callback($heap, $r_kernel, $r_session);
 
-    DEBUG && warn "Proxy for $name ($r_session) created\n";
+    DEBUG && warn "$$: Proxy for $name ($r_session) created\n";
     $kernel->alias_set($name);
-    $kernel->alias_set($r_session);
+    $kernel->alias_set($r_session)
+        unless $kernel->alias_resolve( $r_session );
 
     # monitor for shutdown events.  
     # this is the best way to get IKC::Responder to tell us about the 
@@ -107,7 +108,7 @@ sub _delete
 sub _stop
 {
     my($kernel, $heap)=@_[KERNEL, HEAP];
-    DEBUG && warn "Proxy for $heap->{name} deleted\n";
+    DEBUG && warn "$$: Proxy for $heap->{name} deleted\n";
     &{$heap->{monitor_stop}};
 }
 
@@ -120,19 +121,19 @@ sub _default
     return if $state =~ /^_/;
 
     # use Data::Dumper;
-    # warn "_default args=", Dumper $args;
+    # warn "$$: _default args=", Dumper $args;
     if(not $heap->{callback})
     {
-        warn "Attempt to respond to a callback with $state\n";
+        warn "$$: Attempt to respond to a callback with $state\n";
         return;
     }
 
-    DEBUG && warn "Proxy $heap->{name}/$state posted.\n";
+    DEBUG && warn "$$: Proxy $heap->{name}/$state posted.\n";
     # use Data::Dumper;
-    # warn "_default args=", Dumper $args;
+    # warn "$$: _default args=", Dumper $args;
     my $ARG = [$state, [@$args]];
     foreach my $r_state (@{$heap->{callback}}) {
-        # warn "_default ARG=", Dumper $ARG;
+        # warn "$$: _default ARG=", Dumper $ARG;
         $kernel->call('IKC', 'post2', $r_state, $sender, $ARG);
     }
     return;
@@ -159,7 +160,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

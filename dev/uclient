@@ -20,7 +20,7 @@ sub server_io
 $|++;
 print "Creating sessions...\n";
 
-create_ikc_client(
+POE::Component::IKC::Client->spawn(
         unix=>($ENV{TMPDIR}||$ENV{TEMP}||'/tmp').'/userver',    
         name=>$NAME,
         subscribe=>[qw(poe://*/timeserver)],

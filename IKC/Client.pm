@@ -1,13 +1,13 @@
 package POE::Component::IKC::Client;
 
 ############################################################
-# $Id: Client.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Client.pm 1224 2014-05-15 18:49:21Z fil $
 # Based on refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -18,13 +18,15 @@ use strict;
 use Socket;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 use POE qw(Wheel::ListenAccept Wheel::SocketFactory);
+use POE::Component::IKC::Responder;
 use POE::Component::IKC::Channel;
+use POE::Component::IKC::Util;
 use Carp;
 
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_client);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
@@ -43,6 +45,9 @@ sub create_ikc_client
 
 sub spawn
 {
+    POE::Component::IKC::Responder->spawn;
+
+
     T->start( 'IKC' );
     my( $package, %parms ) = @_;
     $parms{package} ||= $package;
@@ -158,13 +163,14 @@ sub _start {
 
 sub error 
 {
-    my ($heap, $operation, $errnum, $errstr) = @_[HEAP, ARG0, ARG1, ARG2];
+    my ($heap, $kernel, $operation, $errnum, $errstr) = @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
     DEBUG and warn "Client encountered $operation error $errnum: $errstr\n";
     my $w=delete $heap->{wheel};
     # WORK AROUND
     # $w->DESTROY;
-    if($heap->{on_error}) {
-        $heap->{on_error}->($operation, $errnum, $errstr);
+    POE::Component::IKC::Util::monitor_error( $heap, $operation, $errnum, $errstr);
+    if( $heap->{alias} ) {
+        $kernel->alias_remove( delete $heap->{alias} );
     }
 }
 
@@ -180,7 +186,7 @@ sub connected
     T->point( IKC => 'connected' );
                         # give the connection to a Channel
     my %p = ( handle=>$handle, addr=>$addr, port=>$port, client=>1 );
-    my @list = qw(name on_connect subscribe remote_name wheel aliases unix
+    my @list = qw(name on_connect on_error subscribe remote_name wheel aliases unix
                    serializers protocol);
     @p{@list} = @{$heap}{@list};
     $p{rname} = delete $p{remote_name};
@@ -375,7 +381,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

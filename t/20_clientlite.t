@@ -9,7 +9,7 @@ use Test::More tests => 11;
 use POE::Component::IKC::ClientLite;
 use POE::Component::IKC::Server;
 use POE::Component::IKC::Responder;
-use Data::Dumper;
+use Data::Dump qw( pp );
 
 use POE qw(Kernel);
 
@@ -153,9 +153,7 @@ sub shutdown
     my($kernel)=$_[KERNEL];
     $kernel->alias_remove('test');
     DEBUG and warn "Test server: shutdown\n";
-#    use YAML qw(Dump);
-#    use Data::Dumper;
-#    warn Dumper $kernel;
+#    warn pp $kernel;
 }
 ###########################################################
 sub fetchQ

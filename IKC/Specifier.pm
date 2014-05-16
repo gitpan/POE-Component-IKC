@@ -1,9 +1,9 @@
 package POE::Component::IKC::Specifier;
 
 ############################################################
-# $Id: Specifier.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Specifier.pm 1224 2014-05-15 18:49:21Z fil $
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -18,7 +18,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw( specifier_parse specifier_name specifier_part);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
@@ -204,7 +204,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

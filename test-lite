@@ -9,7 +9,7 @@ my $name = shift || 'LiteClient';
 my $norecon = shift || 0;
 
 DEBUG and warn "$$: Connect\n";
-my $poe=create_ikc_client(
+my $poe=POE::Component::IKC::ClientLite->spawn(
         port=>$port,
         name=>$name,
         protocol=>'IKC0'

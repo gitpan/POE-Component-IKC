@@ -1,5 +1,15 @@
 Revision history for Perl extension POE::Component::IKC.
 
+0.2400 15 May 2014
+    - Bumped version
+    - Copyright 2014
+    - Added Server/on_error
+    - Added error monitor
+    - create_ikc_* functions now output deprecation warnings
+    - Fixed a timing issue when changing filters on an IKC channel
+    - Drop all use of Data::Dumper
+    - Remove hard coded ports
+
 0.2305 10 Feb 2013
     - Forgot Devel::Size in PREREQs
 

@@ -18,7 +18,6 @@ my $Q=2;
 my %OK;
 my $WIN32=1 if $^O eq 'MSWin32';
 
-
 DEBUG and print "Starting servers...\n";
 
 # Note : IKC0 for Unix test and IKC for Inet test means we can test

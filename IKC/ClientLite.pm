@@ -1,10 +1,10 @@
 package POE::Component::IKC::ClientLite;
 
 ############################################################
-# $Id: ClientLite.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: ClientLite.pm 1226 2014-05-16 17:02:37Z fil $
 # By Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -26,22 +26,17 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_client);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
 $request=0;
 
 ###############################################################################
-#----------------------------------------------------
-# This is just a convenient way to create servers.  To be useful in
-# multi-server situations, it probably should accept a bind address
-# and port.
-sub create_ikc_client
+sub spawn
 {
-    my $package;
-    $package = (scalar(@_) & 1 ? shift(@_) : __PACKAGE__);
-    my(%parms)=@_;
+    my( $package, %parms ) = @_;
+
 #    $parms{on_connect}||=sub{};         # would be silly for this to be blank
     $parms{ip}||='localhost';           
     $parms{port}||=603;                 # POE! (almost :)
@@ -71,7 +66,14 @@ sub create_ikc_client
     $self->connect and return $self;
     return;
 }
-*spawn=\&create_ikc_client;
+
+sub create_ikc_client
+{
+    my(%parms)=@_;
+    my $package = $parms{package} || __PACKAGE__;
+    carp "create_ikc_client is deprecated; use $package->spawn instead";
+    $package->spawn( %parms );
+}
 
 sub name { $_[0]->{name}; }
 
@@ -602,7 +604,7 @@ POE::Component::IKC::ClientLite - Small client for IKC
 
     use POE::Component::IKC::ClientLite;
 
-    $poe=create_ikc_client(port=>1337);
+    $poe = POE::Component::IKC::ClientLite->new(port=>1337);
     die POE::Component::IKC::ClientLite::error() unless $poe;
 
     $poe->post("Session/event", $param)
@@ -633,7 +635,9 @@ If it can't it returns an error.  If it can, it will send he packet again.  If
 
 =head1 METHODS
 
-=head2 create_ikc_client
+=head2 spawn
+
+    my $poe = POE::Component::IKC::ClientLite->spawn( %params );
 
 Creates a new PoCo::IKC::ClientLite object.  Parameters are supposedly
 compatible with PoCo::IKC::Client, but unix sockets aren't
@@ -765,13 +769,20 @@ Returns our local name.  This is what the remote kernel thinks we are
 called.  I can't really say this is the local kernel name, because, well,
 this isn't really a kernel.  But hey.
 
+
+=head1 FUNCTIONS
+
+=head2 create_ikc_client
+
+DEPRECATED.  Use L<POE::Compoent::IKC::ClientLite/spawn> instead.
+
 =head1 AUTHOR
 
 Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

@@ -11,7 +11,7 @@ plan tests => 4;
 pod_coverage_ok(
         "POE::Component::IKC::Responder",
         { also_private => [ 
-                    qr/^(DEBUG|do_you_have|inform_monitors|post2|raw_message|register_channel|remote_error|request|sig_INT)$/
+                    qr/^(DEBUG|do_you_have|inform_monitors|post2|raw_message|register_channel|remote_error|request|sig_INT|channel_error)$/
                 ], 
         },
         "POE::Component::IKC::Responder, ignoring private functions",

@@ -10,6 +10,7 @@ IKC/Freezer.pm
 IKC/LocalKernel.pm
 IKC/Timing.pm
 IKC/Protocol.pm
+IKC/Util.pm
 IKC.pod
 IKC.pm
 MANIFEST
@@ -33,6 +34,7 @@ t/30_local.t
 t/31_concurrency.t
 t/32_thunk.t
 t/33_thunklite.t
+t/40_monitor.t
 dev/client
 dev/client2
 dev/client3
@@ -51,5 +53,8 @@ dev/t_specifier
 dev/test_delete
 dev/uclient
 dev/userver
+dev/README
+eg/lite-1
+eg/server-1
 META.yml                                 Module YAML meta-data (added by MakeMaker)
 META.json                                Module JSON meta-data (added by MakeMaker)

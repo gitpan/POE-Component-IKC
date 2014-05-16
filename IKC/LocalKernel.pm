@@ -1,8 +1,8 @@
 package POE::Component::IKC::LocalKernel;
 
 ############################################################
-# $Id: LocalKernel.pm 801 2011-08-26 15:14:24Z fil $
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# $Id: LocalKernel.pm 1224 2014-05-15 18:49:21Z fil $
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #

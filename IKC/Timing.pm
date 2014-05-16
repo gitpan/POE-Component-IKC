@@ -2,7 +2,7 @@ package POE::Component::IKC::Timing;
 
 ############################################################
 # $Id$
-# Copyright 2011 Philip Gwyn.  All rights reserved.
+# Copyright 2011-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #

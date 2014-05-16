@@ -1,13 +1,13 @@
 package POE::Component::IKC::Channel;
 
 ############################################################
-# $Id: Channel.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Channel.pm 1226 2014-05-16 17:02:37Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -22,7 +22,8 @@ use POE qw(Wheel::ListenAccept Wheel::ReadWrite Wheel::SocketFactory
           );
 use POE::Component::IKC::Responder;
 use POE::Component::IKC::Protocol;
-use Data::Dumper;
+use POE::Component::IKC::Util;
+use Data::Dump qw( pp );
 use Devel::Size qw( total_size );
 
 # use Net::Gen ();
@@ -32,7 +33,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_channel);
-$VERSION = "0.2305";
+$VERSION = "0.2400";
 
 sub DEBUG () { 0 }
 
@@ -186,14 +187,13 @@ sub channel_start
 
     $session->option(default=>1);
     $heap->{on_connect}=$p->{on_connect} if ref($p->{on_connect});
+    $heap->{on_error}=$p->{on_error} if ref($p->{on_error});
     $heap->{subscribe}=$p->{subscribe} 
             if ref($p->{subscribe}) and @{$p->{subscribe}};
 
     unless($heap->{is_server}) {
         if(ref($p->{serializers}) and @{$p->{serializers}}) {
             $heap->{serializers}=$p->{serializers};
-#        } else {
-#            $heap->{serializers}=$p->{serializers};
         }
         DEBUG and 
             warn __PACKAGE__, " Serializers: ", 
@@ -211,13 +211,16 @@ sub channel_start
         _set_phase($kernel, $heap, '000');
     }
 
+    # This shouldn't be necessary
+    POE::Component::IKC::Responder->spawn();
+
     # Register this channel
     my $ikc = eval { $kernel->alias_resolve( 'IKC' ) };
     if( $ikc ) {
         $kernel->call( $ikc, 'register_channel' );
     }
     else {
-        warn __PACKAGE__, " has no IKC responder.";
+        POE::Component::IKC::Util::monitor_error( $heap, 'setup', 2, "No IKC responder" );
         $kernel->yield( 'shutdown' );
     }
     return "channel-$session";
@@ -230,34 +233,13 @@ sub _negociation_done
     DEBUG and
             warn "$$: Negociation done ($heap->{kernel_name}<->$heap->{remote_kernel}).\n";
 
-    # generate this event on input
-    $heap->{'wheel_client'}->event(InputEvent => 'receive',
-                                   FlushedEvent => 'flushed');
+    $heap->{finishing} = 1;
 
-    unless($heap->{filter}) {
-        DEBUG and warn "$$: We didn't negociate a freezer, using defaults\n";
-        $heap->{filter}=POE::Filter::Reference->new();
-    }
-    # parsing I/O as references
-    my $ft = $heap->{filter};
-    DEBUG and warn "$$: Filter is now $ft";
-    $heap->{wheel_client}->set_filter($ft); 
-    delete $heap->{filter};
+    _pause_wheel( $heap );
+    _register_remote( $kernel, $heap );
 
-    create_ikc_responder();
-
-    # Register the foreign kernel with the responder
-    my $aliases=delete $heap->{remote_aliases};
-    push @$aliases, $heap->{temp_remote_kernel}
-                if $heap->{temp_remote_kernel} and 
-                not grep {$_ eq $heap->{temp_remote_kernel}} @$aliases;
-
-    DEBUG and 
-        warn "$$: Register remote as ", join ', ', @$aliases;
-    # we need a globaly unique ID
-    $heap->{remote_ID}=shift @$aliases;
-#    delete $heap->{remote_kernel};
-    $kernel->call('IKC', 'register', $heap->{remote_ID}, $aliases, $heap->{remote_pid});
+    # now that we've registered the remote kernel, we will no longer trigger on_error
+    delete $heap->{on_error};
 
     TIMING and channel_log( $heap, "negociated" );
     
@@ -272,8 +254,95 @@ sub _negociation_done
         $kernel->yield('done');
     }
 
+    delete $heap->{finishing};
+
+    _change_wheel( $heap );
+    _resume_wheel( $heap ); 
+
+    _monitor_channel( $heap, 'ready' );
+
     return;
 }
+
+sub _register_remote
+{
+    my( $kernel, $heap ) = @_;
+
+    # Register the foreign kernel with the responder
+    my $aliases=delete $heap->{remote_aliases};
+    push @$aliases, $heap->{temp_remote_kernel}
+                    if $heap->{temp_remote_kernel} and 
+                        not grep {$_ eq $heap->{temp_remote_kernel}} @$aliases;
+
+    DEBUG and 
+        warn "$$: Register remote as ", join ', ', @$aliases;
+    # we need a globaly unique ID
+    $heap->{remote_ID}=shift @$aliases;
+#    delete $heap->{remote_kernel};
+    $kernel->call('IKC', 'register', $heap->{remote_ID}, $aliases, $heap->{remote_pid});
+
+    DEBUG and 
+        warn "$$: Registered remotes";
+}
+
+
+sub _change_wheel
+{
+    my( $heap ) = @_;
+
+    DEBUG and
+        warn "$$: Changing the wheel events\n";
+    # generate this event on input
+    $heap->{'wheel_client'}->event( InputEvent => 'receive',
+                                    FlushedEvent => 'flushed'
+                                  );
+
+    unless($heap->{filter}) {
+        DEBUG and warn "$$: We didn't negociate a freezer, using defaults\n";
+        $heap->{filter}=POE::Filter::Reference->new();
+    }
+
+    DEBUG and
+        warn "$$: Changing the wheel filter\n";
+
+    # parsing I/O as references
+    my $ft = $heap->{filter};
+    DEBUG and warn "$$: Filter is now $ft";
+    $heap->{wheel_client}->set_filter($ft); 
+    delete $heap->{filter};
+
+    DEBUG and
+        warn "$$: Changed the wheel filter\n";
+}
+
+
+sub _pause_wheel
+{
+    my( $heap ) = @_;
+    DEBUG and
+        warn "$$: Pause wheel\n";
+    $heap->{'wheel_client'}->pause_input;
+}
+
+sub _resume_wheel
+{
+    my( $heap ) = @_;
+    DEBUG and
+        warn "$$: Resume wheel\n";
+    $heap->{'wheel_client'}->resume_input;
+}
+
+sub _monitor_channel
+{
+    my( $heap, $op ) = @_;
+    $poe_kernel->call( IKC => 'inform_monitors',
+                        $heap->{remote_ID},
+                        'channel', $op, $poe_kernel->get_active_session->ID 
+                     );
+
+
+}
+
 
 #----------------------------------------------------
 # This is the subscription callback
@@ -488,7 +557,7 @@ sub client_000
 
     } 
     else {
-        warn "Server sent '$line' during negociation phase 000\n";
+        warn "$$: Server sent '$line' during negociation phase 000\n";
         # prod far side into saying something coherrent
         $heap->{wheel_client}->put('NOT') unless $line eq 'NOT';
     }
@@ -693,6 +762,11 @@ sub channel_error
     my ($heap, $kernel, $operation, $errnum, $errstr) =
         @_[HEAP, KERNEL, ARG0, ARG1, ARG2];
 
+    POE::Component::IKC::Util::monitor_error( $heap, 
+                            $operation, $errnum, $errstr,
+                            ( $operation eq 'read' && $errnum == 0 )
+                        );
+
     if ($errnum) {
         DEBUG && 
            warn "$$: Channel encountered $operation error $errnum: $errstr\n";
@@ -718,10 +792,7 @@ sub _channel_unregister
 ------------------------------------------
 WARN
         # 2005/06 Tell IKC we closed the connection
-        my $ikc = eval { $poe_kernel->alias_resolve( 'IKC' ) };
-        if( $ikc ) {
-            $poe_kernel->call( $ikc, 'unregister', $heap->{remote_ID});
-        }
+        $poe_kernel->call( 'IKC', 'unregister', $heap->{remote_ID} );
         delete $heap->{remote_ID};
     }
                                         # either way, shut down
@@ -731,10 +802,17 @@ WARN
 sub _close_channel
 {
     my($heap, $force)=@_;
+
+
+    # we have to inform monitors before unregistering
+    # but we only want to inform once, 
+    _monitor_channel( $heap, 'close' ) unless $heap->{inform_once}++;
+
     # tell responder right away that this channel isn't to be used
     _channel_unregister($heap);
 
     return unless $heap->{wheel_client};
+
 
     if(not $force and $heap->{wheel_client}->get_driver_out_octets) {
         DEBUG and 
@@ -742,6 +820,7 @@ sub _close_channel
         $heap->{go_away}=1;         # wait until next Flushed
         return;
     } 
+
     DEBUG and 
         warn "Deleting wheel session = ", $poe_kernel->get_active_session->ID;
     my $x=delete $heap->{wheel_client};
@@ -803,9 +882,12 @@ sub channel_receive
 {
     my ($kernel, $heap, $request) = @_[KERNEL, HEAP, ARG0];
 
+    warn "$$: Attempting to receive during finishing" if $heap->{finishing};
+
     T->point( 'IKC', 'receive' );
 
-    TIMING and channel_log( $heap, "receive" );
+    TIMING and 
+        channel_log( $heap, "receive" );
 
     DEBUG && 
         warn "$$: Received data...\n";
@@ -831,7 +913,10 @@ sub channel_send
 {
     my ($heap, $request)=@_[HEAP, ARG0];
 
-    TIMING and channel_log( $heap, "send" );
+    die "Attempting to send during finishing" if $heap->{finishing};
+
+    TIMING and 
+        channel_log( $heap, "send" );
 
     my $size = total_size $request;
     if( $size > 100*1024*1024 ) {
@@ -845,8 +930,6 @@ sub channel_send
             if ref($request) and $request->{rsvp};
 
     if($heap->{'wheel_client'}) {
-        # use Data::Dumper;
-        # warn "Sending ", Dumper $request;
         $heap->{'wheel_client'}->put($request);
     }
     else {
@@ -857,7 +940,7 @@ sub channel_send
                 'ARRAY' eq ref $request->{params};
         my $type = "missing";
         $type = "shutdown" if $heap->{shutdown};
-        warn "$$: Attempting to put to a $type channel! ". Dumper $what;
+        warn "$$: Attempting to put to a $type channel! ". pp $what;
     }
     T->point( 'IKC', 'send' );
 
@@ -944,15 +1027,18 @@ POE::Component::IKC::Channel - POE Inter-Kernel Communication I/O session
 
     use POE;
     use POE::Component::IKC::Channel;
-    create_ikc_channel($handle, $name, $on_connect, $subscribe, 
-                $rname, $unix);
+
+    POE::Component::IKC::Channel->spawn( %params );
 
 =head1 DESCRIPTION
 
-This module implements an POE IKC I/O.  
-When a new connection
-is established, C<IKC::Server> and C<IKC::Client> create an 
-C<IKC::Channel> to handle the I/O.  
+You will never use an IKC Channel directly.  They are created by
+L<POE::Component::IKC::Server> and L<POE::Component::IKC::Client> as needed.
+
+
+This module implements an POE IKC I/O.  When a new connection is
+established, C<IKC::Server> and C<IKC::Client> create an C<IKC::Channel> to
+handle the I/O.
 
 IKC communication happens in 2 phases : negociation phase and normal phase.
 
@@ -965,13 +1051,6 @@ the Responder.
 
 C<IKC::Channel> is also in charge of cleaning up kernel names when
 the foreign kernel disconnects.
-
-=head1 EXPORTED FUNCTIONS
-
-=head2 create_ikc_channel
-
-This function initiates all the work of connecting to a IKC connection
-channel.  It is a wrapper around C<spawn>.
 
 =head1 METHODS
 
@@ -1056,6 +1135,12 @@ Then, when it becomes time to disconnect:
 
 Yes, this is a hack.  A cleaner machanism needs to be provided.
 
+=head1 EXPORTED FUNCTIONS
+
+=head2 create_ikc_channel
+
+Deprecated.
+
 
 =head1 BUGS
 
@@ -1065,7 +1150,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

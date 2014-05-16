@@ -23,8 +23,16 @@ print "ok 1\n";
 my $Q=2;
 sub DEBUG () {0}
 
+###########
+# Get a "random" port number
+use IO::Socket::INET;
+my $sock = IO::Socket::INET->new( LocalAddr => '127.0.0.1', Listen => 1, ReuseAddr => 1 );
+our $PORT = $sock->sockport;
+undef( $sock );
+
+
 POE::Component::IKC::Server->spawn(
-        port=>1338,
+        port=>$PORT,
         name=>'Inet',
         aliases=>[qw(Ikc)],
     );

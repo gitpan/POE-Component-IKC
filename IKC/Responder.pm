@@ -1,13 +1,13 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Responder.pm 1226 2014-05-16 17:02:37Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -17,7 +17,7 @@ package POE::Component::IKC::Responder;
 use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $ikc);
 use Carp;
-use Data::Dumper;
+use Data::Dump qw( pp );
 
 use POE qw(Session);
 use POE::Component::IKC::Specifier;
@@ -27,7 +27,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 
@@ -37,6 +37,7 @@ sub DEBUG { 0 }
 # This is just a convenient way to create only one responder.
 sub create_ikc_responder 
 {
+    carp "create_ikc_responder is deprecated.  Use ", __PACKAGE__, "->spawn instead";
     __PACKAGE__->spawn();
 }
 
@@ -49,7 +50,7 @@ sub spawn
             $package, [qw(
                       _start _stop _child
                       request post call raw_message post2
-                      remote_error
+                      remote_error channel_error
                       register unregister register_local register_channel
                       default
                       publish retract subscribe unsubscribe
@@ -182,8 +183,6 @@ sub post
 sub post2
 {
     my($heap, $to, $sender, $params) = @_[HEAP, ARG0, ARG1, ARG2];
-    # use Data::Dumper;
-    # warn "post2 params=", Dumper $params;
     $heap->{self}->post($to, $params, $sender);
 }
 
@@ -213,9 +212,19 @@ sub raw_message
 sub remote_error
 {
     my($heap, $msg) = @_[HEAP, ARG0];
-
-    warn "$$: Remote error: $msg\n";
+    $heap->{self}->remote_error( $msg );
 }
+
+#----------------------------------------------------
+# Local channel had an error
+sub channel_error
+{
+    my($heap, $msg) = @_[HEAP, ARG0];
+    return $heap->{self}->channel_error( $msg );
+}
+
+
+
 
 ##############################################################################
 # publish/retract/subscribe mechanism of setting up foreign sessions
@@ -255,9 +264,9 @@ sub subscribe
     $sessions=[$sessions] unless ref $sessions;
     return unless @$sessions;
 
+    $sender = $sender->ID if ref $sender;
     if($callback and 'CODE' ne ref $callback)
     {
-        $sender = $sender->ID if ref $sender;
         my $state=$callback;
         $callback=sub 
         {
@@ -266,7 +275,7 @@ sub subscribe
             $kernel->post($sender, $state, @_);
         };
     }
-    $heap->{self}->subscribe($sessions, $callback, $sender->ID);
+    $heap->{self}->subscribe($sessions, $callback, $sender);
 }
 
 # Called by a foreign IKC session 
@@ -280,19 +289,21 @@ sub do_you_have
     my $self=$heap->{self};
     
     DEBUG and 
-        warn "Wants to subscribe to ", specifier_name($ses), "\n";
+        warn "$$: Wants to subscribe to ", specifier_name($ses), "\n";
     if(exists $self->{'local'}{$ses->{session}} and
        (not $ses->{state} or 
         exists $self->{'local'}{$ses->{session}}{$ses->{state}}
        ))
     {
         $ses->{kernel}||=$kernel->ID;       # make sure we uniquely identify 
-        DEBUG and warn "Allowed (we are $ses->{kernel})\n";
+        DEBUG and 
+            warn "$$: Allowed (we are $ses->{kernel})\n";
         return [$ses, $kernel->ID];         # this session
     } else
     {
-        DEBUG and warn specifier_name($ses), " is not published in this kernel\n";
-        return "NOT ".specifier_name($ses);
+        DEBUG and 
+            warn "$$: ", specifier_name($ses), " is not published in this kernel\n";
+        return "Refused subscription ".specifier_name($ses);
     }
 }
 
@@ -347,7 +358,7 @@ use POE::Component::IKC::Proxy;
 use POE::Component::IKC::LocalKernel;
 use POE qw(Session);
 
-use Data::Dumper;
+use Data::Dump qw( pp );
 
 sub DEBUG { 0 }
 sub DEBUG2 { 0 }
@@ -410,6 +421,54 @@ sub shutdown
 #    warn Dump $kernel;
 }
 
+
+#----------------------------------------------------
+# Error in a remote kernel
+sub remote_error
+{
+    my( $self, $msg ) = @_;
+    $self->_do_error( remote => $msg );
+}
+
+# Error in the local kernel
+sub local_error
+{
+    my( $self, $msg ) = @_;
+    $self->_do_error( local => $msg );
+}
+
+# Error in a local channel
+sub channel_error
+{
+    my( $self, $msg ) = @_;
+    return $self->_do_error( channel => $msg, 1 );
+}
+
+sub _do_error
+{
+    my( $self, $where, $msg, $ignore ) = @_;
+    my $n;
+    eval {
+        my $kernel = '*';
+        my $when = $where;
+        if( ref $msg ) {
+            ( $msg, $kernel, $when ) = @$msg;
+            $kernel ||= '*';
+            $when = "$where-$when" unless $when =~ /^$where-/;
+        }
+        $n = $self->inform_monitors( $kernel, 'error', $when, $msg );
+    };
+    return $n if $n;
+    warn "$$: \u$where error: ", pp( $msg ), "\n" unless $ignore;
+    return;
+}
+
+
+
+
+
+
+
 #----------------------------------------------------
 # Foreign kernel called something here
 sub request    
@@ -417,50 +476,22 @@ sub request
     my($self, $request)=@_;;
     my($kernel)=@{$self}{qw(poe_kernel)};
     DEBUG2 and 
-        warn "IKC request=", Dumper $request;
+        warn "IKC request=", pp $request;
 
     # We ignore the kernel for now, but we should really use it to decide
     # weither we should run the request or not
+    my $when = 'request';
     my $to=specifier_parse($request->{event});
-
+    my $rkernel = $to->{kernel};
     eval {
         die "$request->{event} isn't a valid specifier" unless $to;
-        my $args=$request->{params};
-
-        ### allow proxied states to have multiple ARGs
-        if($to->{state} eq 'IKC:proxy') {
-            $to->{state}=$args->[0];
-            $args=$args->[1];
-            DEBUG and warn "IKC proxied request for ", specifier_name($to), "\n";
-        } 
-        else {
-            DEBUG and warn "IKC request for ", specifier_name($to), "\n";
-            $args=[$args];
-        }
+        my $args = $self->_req_args( $request, $to );
 
         # this is where we'd catch a disconnect message
         # 2001/07 : eh?
 
-
-        # find out if the state we want to get at has been published
-        if(exists $self->{rsvp}{$to->{session}} and
-           exists $self->{rsvp}{$to->{session}}{$to->{state}} and
-           $self->{rsvp}{$to->{session}}{$to->{state}}
-          ) {
-            $self->{rsvp}{$to->{session}}{$to->{state}}--;
-            DEBUG and warn "Allow $to->{session}/$to->{state} is now $self->{rsvp}{$to->{session}}{$to->{state}}\n";
-        }
-        elsif(not exists $self->{'local'}{$to->{session}}) {
-            my $p=$self->published;
-            die "Session '$to->{session}' is not available for remote kernels:",
-                join "\n", '',
-                    map({ "    $_=>[" . join(', ', @{$p->{$_}}) . "]"} keys %$p),
-                    '';
-        }
-        elsif(not exists $self->{'local'}{$to->{session}}{$to->{state}}) {
-            die "Session '$to->{session}' has not published state '",
-                $to->{state}, "'\n";
-        }
+        $when = 'check';
+        $self->_req_is_published( $to );
 
         # maybe caller specified #arg?  This got into $msg->{rsvp}, which
         # went to the remote side, then came back here as $to
@@ -468,9 +499,11 @@ sub request
             push @$args, $to->{args};   # it goes on the end
         }
 
+        $when = 'resolve';
         my $session=$kernel->alias_resolve($to->{session});
-        die "Unknown session '$to->{session}'\n" unless $session;
-        # warn "No FROM" unless $request->{from};
+        die "Unknown session '$to->{session}'" unless $session;
+
+        $when = 'invocation';
         _thunked_post($request->{rsvp}, ["$session", $to->{state}, @$args],
                           $request->{from}, $request->{wantarray});
     };
@@ -479,25 +512,81 @@ sub request
     # Error handling consists of posting a "remote_error" state to
     # the foreign kernel.
     # $request->{errors_to} is set by the local IKC::Channel
-    if($@)
-    {
-        chomp($@);
-        my $err=$@.' ['.specifier_name($to).']';
-        $err.=' sent by ['.specifier_name($request->{from}).']'
-                                                    if $request->{from};
-        warn "$err\n";
-        DEBUG && warn "$$: Error in request: $err\n";
-        unless($request->{is_error})    # don't send an error message back
-        {                               # if this was an error itself
-            $self->send_msg({ event=>$request->{errors_to},
-                              params=>$err, is_error=>1,
-                            });
-        } 
-        else {
-            warn $$,  Dumper $request;
-        }
+    if($@) {
+        $self->_error_response( $@, $request, $to, $rkernel, $when );
     }
 }
+
+sub _req_args
+{
+    my( $self, $request, $to ) = @_;
+    my $args = $request->{params};
+
+    ### allow proxied states to have multiple ARGs
+    if($to->{state} eq 'IKC:proxy') {
+        $to->{state}=$args->[0];
+        $args=$args->[1];
+        DEBUG and warn "IKC proxied request for ", specifier_name($to), "\n";
+    } 
+    else {
+        DEBUG and warn "IKC request for ", specifier_name($to), "\n";
+        $args=[$args];
+    }
+    return $args;
+}
+
+sub _req_is_published
+{
+    my( $self, $to ) = @_;
+
+    # find out if the state we want to get at has been published
+    if(exists $self->{rsvp}{$to->{session}} and
+       exists $self->{rsvp}{$to->{session}}{$to->{state}} and
+       $self->{rsvp}{$to->{session}}{$to->{state}}
+      ) {
+        $self->{rsvp}{$to->{session}}{$to->{state}}--;
+        DEBUG and warn "Allow $to->{session}/$to->{state} is now $self->{rsvp}{$to->{session}}{$to->{state}}\n";
+    }
+    elsif(not exists $self->{'local'}{$to->{session}}) {
+        my $p=$self->published;
+        DEBUG and
+            warn "$$: Available: ",
+                join "\n", '',
+                    map({ "    $_=>[" . join(', ', @{$p->{$_}}) . "]"} keys %$p),
+                    '';
+        die "Session '$to->{session}' is not available for remote kernels\n",
+    }
+    elsif(not exists $self->{'local'}{$to->{session}}{$to->{state}}) {
+        die "Session '$to->{session}' has not published state '",
+            $to->{state}, "'\n";
+    }
+    return 1;
+}
+
+sub _error_response
+{
+    my( $self, $err, $request, $to, $rkernel, $when ) = @_;
+
+    chomp( $err );
+    $err=$err.'.  Request '.specifier_name($to);
+    $err.=' sent by '.specifier_name($request->{from})
+                                                    if $request->{from};
+
+    # Tell local sessions about this error
+    $self->local_error( [ $err, $rkernel, $when ] );
+
+    # never respond to an error message with an error message
+    return if $request->{is_error};
+
+    # Tell remote sessions about this error
+    $self->send_msg( { event=>$request->{errors_to},
+                       params=>[ $err, $rkernel, $when ],
+                       is_error=>1,
+                   } );
+}
+
+
+
 
 #----------------------------------------------------
 # Register foreign kernels so that we can send states to them
@@ -564,8 +653,6 @@ sub register_local
     $self->{remote}{$rid}||=[];       # list of proxy sessions
     $self->{alias}{$rid}||=[];
 
-    # use Data::Dumper;
-    # die Dumper $aliases;
     foreach my $name (@$aliases) {
         unless(defined $name) {
             DEBUG and warn "$$: attempt to register undefined local kernel alias\n";
@@ -696,18 +783,18 @@ sub send_msg
 
     my $to=specifier_parse($msg->{event});
     unless($to) {
-        die "Bad state ", Dumper $msg;
+        die "Bad state ", pp $msg;
     }
     unless($to) {
         warn "Bad or missing 'event' parameter '$msg->{event}' to IKC/$e\n";
         return;
     }
     unless($to->{session}) {
-        warn "Need a session name for IKC/$e\n", Dumper $to;
+        warn "Need a session name for IKC/$e\n", pp $to;
         return;
     }
     unless($to->{state})   {
-        warn "Need a state name for IKC/$e\n", Dumper $to;
+        warn "Need a state name for IKC/$e\n", pp $to;
         return;
     }
 
@@ -755,13 +842,11 @@ sub send_msg
 
     # Get a list of channels to send the message to
     my @channels=$self->channel_list( $name );
-    unless(@channels)
-    {
-        warn "$$: MSG TO ", Dumper $to;
-        warn (($name eq '*')
-                  ? "$$: Not connected to any foreign kernels.\n"
-                  : "$$: Unknown kernel '$name'.\n");
-        warn "$$: Known kernels: ". $self->channel_names;
+    unless(@channels) {
+        my $err = (($name eq '*')
+                    ? "$$: Not connected to any foreign kernels."
+                    : "$$: Unknown kernel '$name'.");
+        $self->inform_monitors( '*', 'error', 'resolve', $err );
         return 0;
     }
 
@@ -924,9 +1009,6 @@ sub post
     my($self, $to, $params, $sender) = @_;
 
     $to="poe://$to" unless ref $to or $to=~/^poe:/;
-    # use Data::Dumper;
-    # warn "params=", Dumper $params;
-
     $self->send_msg({params=>$params, 'event'=>$to}, $sender);
 }
 
@@ -952,7 +1034,7 @@ sub call
     $rsvp=$t;
     unless($rsvp->{state})
     {
-        DEBUG and warn Dumper $rsvp;
+        DEBUG and warn pp $rsvp;
         warn "$$: rsvp state not set in poe:IKC/call\n";
         return;
     }
@@ -966,8 +1048,6 @@ sub call
     }
     DEBUG2 and warn "RSVP is ", specifier_name($rsvp), "\n";
 
-    # use Data::Dumper;
-    # warn "params=", Dumper $params;
     $self->send_msg({params=>$params, 'event'=>$to,
                      rsvp=>$rsvp
                     }, $sender
@@ -1010,7 +1090,7 @@ sub publish
         die "\$states isn't an array ref" unless ref($states) eq 'ARRAY';
         foreach my $q (@$states) {
             DEBUG and 
-                print STDERR "Published poe:$alias/$q\n";
+                print STDERR "$$: Published poe:$alias/$q\n";
             $p->{$q}=1;
         }
     }
@@ -1112,8 +1192,14 @@ sub subscribe
                      rsvp=>{kernel=>$id, session=>'IKC', state=>$unique.$spec},
                     }, 
                  );
-            # TODO What if this post failed?  Session that posted this would
-            # surely want to know
+            DEBUG and warn "$$: do_you_have sent to $count sessions\n";
+            if( $count == 0 ) {
+                # This post failed.  Session that posted this would
+                # surely want to know
+                $self->inform_monitors( '*', 'error', 
+                                        'subscribe', 
+                                        "Unknown kernel $ses->{kernel}" );
+            }
         } else
         {                       # Bleh.  User shouldn't be that dumb       
             die "You can't subscribe to a session within the current kernel.";
@@ -1181,8 +1267,11 @@ sub _subscribe_receipt
     my $del;
 
     if(not $ses or not ref $ses) {               # REFUSED
-        warn "$$: Refused to subscribe to $spec";
-        warn "$$: $resp" if $resp;
+        $resp ||= "Refused subscription to $spec";
+        $self->inform_monitors( '*', 'error', 
+                                         'subscribe', 
+                                         $resp )
+            or warn "$$: $resp";
         $accepted=0;
         $del=$unique.$spec;
     } 
@@ -1318,10 +1407,13 @@ sub inform_monitors
     croak "$$: No kernel in $_[1]!" unless $rid;
 
     my $real=1 if $self->{channel}{$rid};
-    DEBUGM and do {
-            warn "$$: inform $event $rid";
+    DEBUGM and 
+        do {
+            warn "$$: inform $event $rid\n";
             warn "$$: $rid is", ($real ? '' : "n't"), " real\n";
         };
+
+    my $count = 0;
 
     # got to be a better way of doing this...
     my @todo=($rid);
@@ -1351,15 +1443,17 @@ sub inform_monitors
                 # ARG4.... = per-message info
             $kernel->post($sender, $e, $states->{__name}, $rid, $real,
                             $states->{data}, @params);
+            $count++;
         }
     }
 
     # $rid might be an alias to something else, inform about those as well
     if($self->{channel}{$rid}) {
         foreach my $ra (@{$self->{alias}{$rid}}) {
-            $self->inform_monitors($ra, $event, @params);
+            $count += $self->inform_monitors($ra, $event, @params);
         }
     }
+    return $count;
 }
 
 
@@ -1383,7 +1477,7 @@ package POE::Component::IKC::Responder::Thunk;
 use strict;
 
 use Carp;
-use Data::Dumper;
+use Data::Dump qw( pp );
 use POE::Component::IKC;
 use POE::Session;
 use POE;
@@ -1435,7 +1529,8 @@ sub DEBUG2 { 0 }
         # If they break, please contact gwyn-at-cpan.org.
         # 2011/08 - These have been changed for 1.311
         if( $poe_kernel->_data_ses_exists( $current_thunk ) ) {
-            my $count = $poe_kernel->_data_extref_count_ses( $current_thunk );
+            my $count = $poe_kernel->[ POE::Kernel::KR_EXTRA_REFS() ]->count_session_refs( $current_thunk );
+            # my $count = $poe_kernel->_data_extref_count_ses( $current_thunk );
             if( 0==$count ) {
                 DEBUG and warn "$$: $NAME reuse\n";
                 return 1;
@@ -1483,7 +1578,7 @@ sub __thunk
     # warn "no FROM" unless $from;
 
     if($rsvp) {                         # foreign session wants returned value
-        DEBUG2 and warn "Calling ", Dumper $call;
+        DEBUG2 and warn "Calling ", pp $call;
 
         DEBUG2 and do { warn "Wants an array" if $wantarray};
 
@@ -1498,7 +1593,7 @@ sub __thunk
         if($yes) {
             DEBUG2 and do {
                 local $"=', ';
-                warn "Posted response '@ret' to ", Dumper $rsvp;
+                warn "Posted response '@ret' to ", pp $rsvp;
             };
             # This is the POSTBACK
             $POE::Component::IKC::Responder::ikc->send_msg(
@@ -1509,7 +1604,7 @@ sub __thunk
     else {
         # 2009/05 - use ->call() so that {from} can't be modified
         # before refcount_increment is called
-        DEBUG2 and warn "Posting ", Dumper $call;
+        DEBUG2 and warn "Posting ", pp $call;
         $kernel->call(@$call);
     }
 }
@@ -1943,6 +2038,12 @@ The following states can be monitored:
 
 =over 6
 
+=item C<channel>
+
+Called when a channel becomes ready or goes away.  ARG3 is either C<ready>
+or C<close>.  ARG4 is the numerical ID of the channel's session.  See
+L</CHANNELS> below.
+
 =item C<register>
 
 Called when a remote kernel or alias is registered.  This is equivalent to
@@ -1968,6 +2069,11 @@ Called when IKC succeeds in unsubscribing from a remote session.
 You are informed whenever someone tries to do a sane shutdown of IKC and all
 peripheral sessions.  This will called only once, after somebody posts an
 IKC/shutdown event.
+
+=item C<error>
+
+You are informed of errors in local and remote kernels.  ARG3 is the operation that
+failed. ARG4 is the error message.  See L</ERRORS> below.
 
 =item C<data>
 
@@ -2009,6 +2115,9 @@ Callback-specific parameters.  See above.
 Most of the time, ARG0 and ARG1 will be the same.  Exceptions are if you are
 monitoring C<*> or if you supplied a full IKC event specifier to
 IKC/monitor rather then just a plain kernel name. 
+
+
+
 
 =head2 Short note about monitoring all kernels with C<*>
 
@@ -2058,9 +2167,140 @@ Session is no longer monitoring all kernels, only 'Pulse'.
 Now we aren't even interested in 'Pulse';
 
 
+=head1 CHANNELS
+
+Previous versions of IKC did not adequately allow you to control a connection.
+With 0.2400 we added a much needed feature.
+
+Each connection to a remote kernel is handled by a channel session.  You
+find out the session's ID by monitoring for L</channel> operations.  You may
+close a channel and the corresponding connection to the remote kernel by
+sending it a L</shutdown> event.
+
+    sub _start {
+        # set up the monitor
+        $poe_kernel->call( IKC => monitor => '*' => { channel => 'channel' } );
+    }
+
+    sub channel {
+        my( $self, $rid, $rkernel, $real, $data, $op, $channel ) = @_[ OBJECT, ARG0..$#_ ];
+        return unless $real;    # only care about the real kernel ID
+        if( $op eq 'ready' ) {  # new channel is ready
+            $self->{channel}{ $rkernel } = $channel;
+        }
+        elsif( $op eq 'close' ) {   # channel is gone
+            delete $self->{channel}{ $rkernel };
+        }
+    }
+
+    # this an event posted from your controler logic
+    sub close_channel {
+        my( $self, $rkernel ) = @_[ OBJECT, ARG0 ];
+        # tell the channel to close
+        $poe_kernel->post( $self->{channel}{ $rkernel } => 'shutdown' );
+    }
 
 
 
+=head1 ERRORS
+
+Previous versions of IKC did not adequately allow you to monitor for errors
+on a connection.  With 0.2400 we started monitoring errors.
+
+There are 2 step during which you can have errors: when opening the connection and
+during message exchange.  These 2 steps are handled diffrently.
+
+You use L<POE::Component::IKC::Client/on_error> and
+L<POE::Component::IKC::Server/on_error> to receive errors while a connection
+is being opened.  Note that this includes the initial IKC handshake.
+
+    sub on_error 
+    {
+        my( $op, $errnum, $errstr ) = @_;
+        # Handle this like you would any POE socket error
+        # But remember you can't rely on your session being active
+    }
+
+
+You use L</monitor> on error to receive errors during message exchange.  ARG3 is the
+name of the operation.  ARG4 is the error message.  Current operations are:
+
+=over 4
+
+=item remote-request
+
+Remote kernel was unable to parse a request that was sent from the local kernel.
+
+=item remote-check
+
+Remote kernel has not published an event that was sent from the local kernel.
+
+=item remote-resolve
+
+Remote kernel could not find a session that could handle the request.
+
+=item remote-invocation
+
+Remote kernel had an error when it tried to invoke the request handler. 
+Please note this will not catch errors in the request handler, but only errors
+in the thunk.
+
+
+=item local-request
+
+=item local-check
+
+=item local-resolve
+
+=item local-invocation
+
+These 4 operations are the local equivalent of the previous 4.  They are
+intented for logging.  In general no actions are required.
+
+Note that 'local' and 'remote' refer to where the operation happened, not
+where the request originated.  As an example, kernel A sends a
+poe://B/foo/bar request to kernel B.  Kernel B has not published that event. 
+Monitors on kernel A will see L<remote-check>.  Monitors on kernel B will
+see L<local-check>.
+
+=item channel-error
+
+Receive channel errors during message exchange.   Channel errors are
+equivalent to POE wheel errors.  The message will be C<"[$errnum] $errstr">.
+
+=item subscribe
+
+Failure to subscribe to a remote session.
+
+=item fork
+
+L<POE::Component::IKC::Server> failed to fork.
+
+=item resolve
+
+Error when trying to find a remote kernel or session.
+
+=back
+
+Example monitor for error events:
+
+    sub monitor_error
+    {   
+        my( $self, $rid, $kernel, $real, $data, $op, $message ) = 
+                @_[ OBJECT, ARG0 ... $#_ ];
+        if( $op =~ /^channel-/ and $message =~ /\[(\d+)\] (.*)/ ) {
+            return unless $real;
+            my( $errnum, $errstr ) = ( $1, $2 );
+            if( $op eq 'channel-read' and $errnum == 0 ) {
+                waypoint "Connection closed";
+                return;
+            }
+        }
+        waypoint "Error during $op: $message";
+    }
+
+In particular, you will note we don't do anything when we detect the channel
+closed.  Instead, it is recommended to attempt reconnection in the L</unregister> event.
 
 
 
@@ -2068,12 +2308,9 @@ Now we aren't even interested in 'Pulse';
 
 =head2 C<create_ikc_responder>
 
-This function creates the Responder session and object.  However, you don't
-need to call this directly, because L<POE::Component::IKC::Client> or 
-L<POE::Component::IKC::Server> does
-this for you.
-
-Deprecated, use L</spawn>.
+DEPRECATED.  Please use 
+    
+    POE::Compontent::IKC::Responder->spawn();
 
 
 
@@ -2121,7 +2358,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

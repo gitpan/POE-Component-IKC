@@ -48,7 +48,7 @@ sub create_me
 }
 
 $|++;
-create_ikc_client(
+POE::Component::IKC::Client->spawn(
             port=>31337,            
             name=>$name,
             subscribe=>[qw(poe://*/timeserver)],

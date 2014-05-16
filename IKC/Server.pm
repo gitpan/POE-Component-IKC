@@ -1,13 +1,13 @@
 package POE::Component::IKC::Server;
 
 ############################################################
-# $Id: Server.pm 1077 2013-02-11 16:50:56Z fil $
+# $Id: Server.pm 1225 2014-05-15 19:21:54Z fil $
 # Based on refserver.perl and preforkedserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
 # Turned into a module by Philp Gwyn <fil@pied.nu>
 #
-# Copyright 1999-2011 Philip Gwyn.  All rights reserved.
+# Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
 #
@@ -17,17 +17,20 @@ package POE::Component::IKC::Server;
 use strict;
 use Socket;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
+use Carp;
 use POE qw(Wheel::ListenAccept Wheel::SocketFactory);
 use POE::Component::IKC::Channel;
 use POE::Component::IKC::Responder;
+use POE::Component::IKC::Util;
 use POSIX qw(:errno_h);
 use POSIX qw(ECHILD EAGAIN WNOHANG);
+
 
 require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_server);
-$VERSION = '0.2305';
+$VERSION = '0.2400';
 
 sub DEBUG { 0 }
 sub DEBUG_USR2 { 1 }
@@ -79,6 +82,7 @@ sub create_ikc_server
 {
     my( %params )=@_;
     $params{package} ||= __PACKAGE__;
+    carp "create_ikc_server is DEPRECATED.  Please use $params{package}->spawn instead";
     return $params{package}->spawn( %params );
 }
 
@@ -168,6 +172,9 @@ sub _start
 
     my $ret;
 
+    # This shouldn't be necessary
+    POE::Component::IKC::Responder->spawn;
+
     # monitor for shutdown events.
     # this is the best way to get IKC::Responder to tell us about the
     # shutdown
@@ -198,6 +205,7 @@ sub _start
     $heap->{kernel_aliases}=$params->{aliases};
     $heap->{concurrency}=$params->{concurrency} || 0;
     $heap->{protocol}=$params->{protocol};
+    $heap->{on_error}=$params->{on_error} if $params->{on_error};
                                         # create a socket factory
     $heap->{wheel} = new POE::Wheel::SocketFactory (%wheel_p);
     if( $heap->{wheel} and not $params->{unix} and not $params->{port} ) {
@@ -538,21 +546,23 @@ sub shutdown
 sub error
 {
     my ($heap, $operation, $errnum, $errstr) = @_[HEAP, ARG0, ARG1, ARG2];
-    warn __PACKAGE__, " $$: encountered $operation error $errnum: $errstr\n";
+
+
+    DEBUG and
+        warn __PACKAGE__, " $$: encountered $operation error $errnum: $errstr\n";
+
     my $ignore;
     if($errnum==EADDRINUSE) {       # EADDRINUSE
-        warn "$$: IKC Address $heap->{wheel_address} in use\n";
         $heap->{'die'}=1;
         _delete_wheel( $heap );
-        $ignore=1;
+        $ignore = 0;
     } elsif($errnum==WSAEAFNOSUPPORT) {
         # Address family not supported by protocol family.
         # we get this error, yet nothing bad happens... oh well
         $ignore=1;
     }
     unless($ignore) {
-        # TODO : post to monitors
-        warn __PACKAGE__, " $$: encountered $operation error $errnum: $errstr\n";
+        POE::Component::IKC::Util::monitor_error( $heap, $operation, $errnum, $errstr );
     }
 }
 
@@ -593,7 +603,8 @@ sub accept
                 name=>$heap->{name},
                 unix=>$heap->{unix}, 
                 aliases=>[@{$heap->{kernel_aliases}||[]}],
-                protocol=>$heap->{protocol}
+                protocol=>$heap->{protocol},
+                on_error=>$heap->{on_error}
             );
 
     _concurrency_up($heap);
@@ -641,9 +652,8 @@ sub fork
             $heap->{'failed forks'}++;
             $kernel->delay('retry', 1);
         }
-                                        # fail permanently, if fatal
-        else {
-            warn "Can't fork: $!\n";
+        else {                          # fail permanently, if fatal
+            POE::Component::IKC::Util::monitor_error( $heap, 'fork', 0+$1, "$!" );
             $kernel->yield('_stop');
         }
         return;
@@ -997,7 +1007,7 @@ identical.
 
 =head2 C<create_ikc_server>
 
-Syntatic sugar for POE::Component::IKC::Server->spawn.
+Deprecated.  Use L<POE::Component::IKC::Server/spawn>.
 
 =head1 CLASS METHODS
 
@@ -1006,7 +1016,7 @@ Syntatic sugar for POE::Component::IKC::Server->spawn.
 This methods initiates all the work of building the IKC server. 
 Parameters are :
 
-=over 3
+=over 4
 
 =item C<ip>
 
@@ -1075,12 +1085,26 @@ pipe), they will not share the conncurrent connection count.
 
 =item C<protocol>
 
-Which IKC negociation protocol to use.  The original protocol (C<IKC>) was
-synchronous and slow.  The new protocol (C<IKC0>) sends all information at
-once.  IKC0 will degrade gracefully to IKC, if the client and server don't
-match.
+Which IKC negociation protocol to use.  The original protocol (C<IKC>) had a
+slow synchronous handshake.  The new protocol (C<IKC0>) sends all the
+handshake information at once.  IKC0 will degrade gracefully to IKC, if the
+client and server don't match.
 
 Default is IKC0.
+
+=item C<on_error>
+
+Coderef that is called for all errors. You could use this to monitor for
+problems when forking children or opening the socket.  Parameters are
+C<$operation, $errnum and $errstr>, which correspond to
+POE::Wheel::SocketFactory's FailureEvent, which q.v.
+
+However, IKC/monitor provides a more powerful mechanism for detecting
+errors.  See L<POE::Component::IKC::Responder>.  
+
+Note, also, that the coderef will be executed from within an IKC session,
+NOT within your own session.  This means that things like
+$poe_kernel->delay_set() won't do what you think they should.
 
 
 =back
@@ -1109,7 +1133,7 @@ Philip Gwyn, <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

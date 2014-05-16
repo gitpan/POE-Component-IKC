@@ -10,7 +10,7 @@ my @connections;
 
 my $name=$ARGV[0]||0;
 print "$$: Connecting $name\n";
-my $remote=create_ikc_client(
+my $remote=POE::Component::IKC::ClientLite->spawn(
             port=>31337,            
             name=>"lclient2-$$-$name",
             timeout=>5,

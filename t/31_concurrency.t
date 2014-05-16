@@ -288,7 +288,7 @@ sub run
     my $name = "\u$type$$".'Client';
 
     DEBUG and warn "$$: Connect\n";
-    my $poe=create_ikc_client(
+    my $poe= POE::Component::IKC::ClientLite->spawn(
             port=>$port,
             name=>$name,
         );

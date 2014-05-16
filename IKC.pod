@@ -1,4 +1,4 @@
-l=head1 NAME
+=head1 NAME
 
 POE::Component::IKC -- POE Inter-Kernel Communication
 
@@ -226,7 +226,7 @@ Philip Gwyn <perl-ikc at pied.nu>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 1999-2011 by Philip Gwyn.  All rights reserved.
+Copyright 1999-2014 by Philip Gwyn.  All rights reserved.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
