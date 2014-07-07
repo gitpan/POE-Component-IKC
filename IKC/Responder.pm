@@ -1,7 +1,7 @@
 package POE::Component::IKC::Responder;
 
 ############################################################
-# $Id: Responder.pm 1228 2014-05-16 19:05:32Z fil $
+# $Id: Responder.pm 1248 2014-07-07 09:06:58Z fil $
 # Based on tests/refserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -27,7 +27,7 @@ use Scalar::Util qw(reftype);
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_responder $ikc);
-$VERSION = '0.2401';
+$VERSION = '0.2402';
 
 sub DEBUG { 0 }
 
@@ -2311,11 +2311,11 @@ Example monitor for error events:
             return unless $real;
             my( $errnum, $errstr ) = ( $1, $2 );
             if( $op eq 'channel-read' and $errnum == 0 ) {
-                waypoint "Connection closed";
+                warn "Connection closed";
                 return;
             }
         }
-        waypoint "Error during $op: $message";
+        warn "Error during $op: $message";
     }
 
 In particular, you will note we don't do anything when we detect the channel

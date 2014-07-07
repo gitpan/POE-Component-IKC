@@ -23,4 +23,4 @@ requires:
   POE: '1.311'
   Scalar::Util: '1'
   Test::More: '0.6'
-version: '0.2401'
+version: '0.2402'

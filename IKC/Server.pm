@@ -1,7 +1,7 @@
 package POE::Component::IKC::Server;
 
 ############################################################
-# $Id: Server.pm 1228 2014-05-16 19:05:32Z fil $
+# $Id: Server.pm 1247 2014-07-07 09:06:34Z fil $
 # Based on refserver.perl and preforkedserver.perl
 # Contributed by Artur Bergman <artur@vogon-solutions.com>
 # Revised for 0.06 by Rocco Caputo <troc@netrus.net>
@@ -30,15 +30,15 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(create_ikc_server);
-$VERSION = '0.2401';
+$VERSION = '0.2402';
 
 sub DEBUG { 0 }
 sub DEBUG_USR2 { 1 }
 BEGIN {
     # http://support.microsoft.com/support/kb/articles/Q150/5/37.asp
-    eval '*WSAEAFNOSUPPORT = sub { 10047};';
-    if($^O eq 'MSWin32') {
-        eval '*EADDRINUSE      = sub { 10048 };';
+    eval '*WSAEAFNOSUPPORT = sub { 10047 };';
+    if( $^O eq 'MSWin32' and not eval "EADDRINUSE" ) {
+        eval '*EADDRINUSE  = sub { 10048 };';
     }
 }
 

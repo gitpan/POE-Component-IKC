@@ -5,11 +5,14 @@ use warnings;
 
 use Symbol;
 
-use Test::More ( tests => 22 );
+use Test::More;
+plan skip_all => 'This test fails on Win32' if $^O eq 'MSWin32';
+
+
+plan tests => 22;
 
 sub DEBUG () { 0 }
 
-$DB::fork_TTY = $DB::fork_TTY = '/dev/pts/42';
 use POE;
 
 use POE::Component::IKC::Server;

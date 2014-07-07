@@ -1,6 +1,15 @@
 Revision history for Perl extension POE::Component::IKC.
 
-0.2400 15 May 2014
+0.2402 7 Jul 2014
+    - Don't test POD
+    - Better handling of EADDRINUSE on Win32
+    - Win32 doesn't have open "-|", skip that test for now
+
+0.2401 16 May 2014
+    - Fixed the code in thunking that depended on a non-released version of POE
+    - Use $Test::Builder::Level
+
+0.2400 16 May 2014
     - Bumped version
     - Copyright 2014
     - Added Server/on_error

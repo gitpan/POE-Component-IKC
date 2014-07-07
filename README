@@ -20,10 +20,10 @@ the overhead :)
 
 STABILITY 
 
-I use IKC full time on my sites (for example, http://www.camelot.ca/) so I'd
-say it is "stable enough if you know what you're doing", even if it doesn't
-implement my full original vision.  I use IKC::ClientLite in mod_perl to
-talk to POE-based "application servers".
-
+I used to use IKC full time on my sites.  However, I've moved to exclusively 
+developing Intranet applications.  One of my main apps (http://www.quaero.ca/) 
+has a POEx::HTTP::Server front end and talks IKC with an application server.
+This means IKC handles thousands of requests an hour.  I trust it, but then I
+know what I'm doing.
 
 -Philip Gwyn, <fil@pied.nu>

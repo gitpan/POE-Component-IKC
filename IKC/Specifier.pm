@@ -1,7 +1,7 @@
 package POE::Component::IKC::Specifier;
 
 ############################################################
-# $Id: Specifier.pm 1228 2014-05-16 19:05:32Z fil $
+# $Id: Specifier.pm 1247 2014-07-07 09:06:34Z fil $
 #
 # Copyright 1999-2014 Philip Gwyn.  All rights reserved.
 # This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,7 @@ use Carp;
 require Exporter;
 @ISA = qw(Exporter);
 @EXPORT = qw( specifier_parse specifier_name specifier_part);
-$VERSION = '0.2401';
+$VERSION = '0.2402';
 
 sub DEBUG { 0 }
 
